@@ -1,0 +1,24 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["K2R6W9P99E.Anica.Zeitline"],
+        "components": [
+          {
+            "/": "/meta-wearables",
+            "comment": "Main Meta Wearables integration path"
+          },
+          {
+            "/": "/meta-wearables/*",
+            "comment": "All Meta Wearables sub-paths"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["K2R6W9P99E.Anica.Zeitline"]
+  }
+}
+
