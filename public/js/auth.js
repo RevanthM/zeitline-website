@@ -5,16 +5,38 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("authStateChanged", async (e) => {
     const user = e.detail;
     if (user) {
-      // Check if onboarding is complete
+      // First check localStorage for onboarding status (works offline/demo mode)
+      const onboardingComplete = localStorage.getItem("zeitline_onboarding_complete") === "true";
+      
+      if (onboardingComplete) {
+        window.location.href = "/dashboard.html";
+        return;
+      }
+      
+      // Fallback: Check API if localStorage doesn't have the flag
       try {
         const profile = await apiCall("/users/profile");
         if (profile.data && profile.data.onboardingComplete) {
+          localStorage.setItem("zeitline_onboarding_complete", "true");
           window.location.href = "/dashboard.html";
         } else {
           window.location.href = "/onboarding.html";
         }
       } catch (error) {
-        // Profile doesn't exist, redirect to onboarding
+        // API not available, check if we have local profile data
+        const savedProfile = localStorage.getItem("zeitline_profile");
+        if (savedProfile) {
+          try {
+            const profile = JSON.parse(savedProfile);
+            if (profile.onboardingComplete) {
+              localStorage.setItem("zeitline_onboarding_complete", "true");
+              window.location.href = "/dashboard.html";
+              return;
+            }
+          } catch (e) {
+            // Parse error, continue to onboarding
+          }
+        }
         window.location.href = "/onboarding.html";
       }
     }

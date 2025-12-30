@@ -907,8 +907,12 @@ async function completeOnboarding() {
   showLoading("Setting up your account...");
 
   try {
+    // Mark onboarding as complete
+    onboardingData.onboardingComplete = true;
+    
     // Save all data to localStorage as backup (works without backend)
     localStorage.setItem("zeitline_profile", JSON.stringify(onboardingData));
+    localStorage.setItem("zeitline_onboarding_complete", "true");
     
     // Try to save to backend if available
     try {
@@ -942,6 +946,7 @@ async function completeOnboarding() {
     console.error("Error completing onboarding:", error);
     
     // Still redirect even if backend fails - data is in localStorage
+    localStorage.setItem("zeitline_onboarding_complete", "true");
     showSuccess("Setup complete! Redirecting...");
     setTimeout(() => {
       window.location.href = "/dashboard.html";
