@@ -1226,7 +1226,43 @@
         </div>
     </footer>
 
+    <!-- Firebase SDK for auth check -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script>
+        // Initialize Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyCh1_h1BRyDR7xyGeokxTXJ5ie_q_w7778",
+            authDomain: "zeitlineai.firebaseapp.com",
+            projectId: "zeitlineai",
+            storageBucket: "zeitlineai.firebasestorage.app",
+            messagingSenderId: "78709689112",
+            appId: "1:78709689112:web:eeb08e745cdd9c6880ac6d"
+        };
+        firebase.initializeApp(firebaseConfig);
+        
+        // Check if user is already logged in and onboarding is complete
+        firebase.auth().onAuthStateChanged((user) => {
+            if (user) {
+                // User is signed in - check if onboarding is complete
+                const onboardingComplete = localStorage.getItem("zeitline_onboarding_complete") === "true";
+                const savedProfile = localStorage.getItem("zeitline_profile");
+                
+                if (onboardingComplete) {
+                    // Redirect to dashboard
+                    window.location.href = "/dashboard.html";
+                } else if (savedProfile) {
+                    try {
+                        const profile = JSON.parse(savedProfile);
+                        if (profile.onboardingComplete) {
+                            localStorage.setItem("zeitline_onboarding_complete", "true");
+                            window.location.href = "/dashboard.html";
+                        }
+                    } catch (e) {}
+                }
+            }
+        });
+        
         // Smooth scroll for anchor links
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {
             anchor.addEventListener('click', function(e) {
