@@ -15,6 +15,15 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
+// Set persistence to LOCAL - keeps user logged in even after browser closes
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+  .then(() => {
+    console.log("Auth persistence set to LOCAL");
+  })
+  .catch((error) => {
+    console.error("Error setting persistence:", error);
+  });
+
 // API base URL - change for production
 const API_BASE_URL =
   window.location.hostname === "localhost"
