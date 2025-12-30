@@ -1,44 +1,57 @@
 // Auth page functionality
 
+function hasCompletedOnboarding() {
+  // Check the explicit flag first
+  if (localStorage.getItem("zeitline_onboarding_complete") === "true") {
+    return true;
+  }
+  
+  // Check if profile data exists with required fields filled
+  const savedProfile = localStorage.getItem("zeitline_profile");
+  if (savedProfile) {
+    try {
+      const profile = JSON.parse(savedProfile);
+      // If they have personal info filled out, consider onboarding complete
+      if (profile.personal && profile.personal.fullName && profile.personal.age) {
+        localStorage.setItem("zeitline_onboarding_complete", "true");
+        return true;
+      }
+      if (profile.onboardingComplete) {
+        localStorage.setItem("zeitline_onboarding_complete", "true");
+        return true;
+      }
+    } catch (e) {
+      // Parse error
+    }
+  }
+  
+  return false;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+  // Determine if we're on login or signup page
+  const isLoginPage = window.location.pathname.includes("login");
+  const isSignupPage = window.location.pathname.includes("signup");
+  
   // Check if user is already signed in
   window.addEventListener("authStateChanged", async (e) => {
     const user = e.detail;
     if (user) {
-      // First check localStorage for onboarding status (works offline/demo mode)
-      const onboardingComplete = localStorage.getItem("zeitline_onboarding_complete") === "true";
-      
-      if (onboardingComplete) {
+      // If on login page, user is existing - go to dashboard
+      if (isLoginPage) {
+        localStorage.setItem("zeitline_onboarding_complete", "true");
         window.location.href = "/dashboard.html";
         return;
       }
       
-      // Fallback: Check API if localStorage doesn't have the flag
-      try {
-        const profile = await apiCall("/users/profile");
-        if (profile.data && profile.data.onboardingComplete) {
-          localStorage.setItem("zeitline_onboarding_complete", "true");
-          window.location.href = "/dashboard.html";
-        } else {
-          window.location.href = "/onboarding.html";
-        }
-      } catch (error) {
-        // API not available, check if we have local profile data
-        const savedProfile = localStorage.getItem("zeitline_profile");
-        if (savedProfile) {
-          try {
-            const profile = JSON.parse(savedProfile);
-            if (profile.onboardingComplete) {
-              localStorage.setItem("zeitline_onboarding_complete", "true");
-              window.location.href = "/dashboard.html";
-              return;
-            }
-          } catch (e) {
-            // Parse error, continue to onboarding
-          }
-        }
-        window.location.href = "/onboarding.html";
+      // If on signup page, check if they've completed onboarding
+      if (hasCompletedOnboarding()) {
+        window.location.href = "/dashboard.html";
+        return;
       }
+      
+      // New signup - go to onboarding
+      window.location.href = "/onboarding.html";
     }
   });
 });
