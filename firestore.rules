@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the document
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Helper function to validate user profile data
+    function isValidUserProfile() {
+      let data = request.resource.data;
+      return data.keys().hasAll(['email', 'createdAt', 'plan', 'onboardingComplete'])
+        && data.email is string
+        && data.plan in ['free', 'pro']
+        && data.onboardingComplete is bool;
+    }
+    
+    // Helper function to validate personal info
+    function isValidPersonalInfo() {
+      let personal = request.resource.data.personal;
+      return personal.fullName is string
+        && personal.age is number
+        && personal.age >= 13
+        && personal.age <= 120;
+    }
+    
+    // User profiles collection
+    match /users/{userId} {
+      // Users can only read their own profile
+      allow read: if isOwner(userId);
+      
+      // Users can create their own profile with valid data
+      allow create: if isOwner(userId) && isValidUserProfile();
+      
+      // Users can update their own profile
+      allow update: if isOwner(userId);
+      
+      // Users cannot delete their profile (admin only)
+      allow delete: if false;
+      
+      // User's activity sessions subcollection
+      match /sessions/{sessionId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's activities subcollection
+      match /activities/{activityId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+    
+    // Stripe customers collection (managed by webhook)
+    match /stripe_customers/{customerId} {
+      // Only the linked user can read their Stripe customer data
+      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      
+      // No client-side writes allowed (webhook only)
+      allow write: if false;
+    }
+    
+    // Subscriptions collection
+    match /subscriptions/{subscriptionId} {
+      // Users can read their own subscriptions
+      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      
+      // No client-side writes (webhook only)
+      allow write: if false;
+    }
+    
+    // Default deny all other access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

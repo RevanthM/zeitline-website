@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard – Zeitline</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        /* Dashboard specific styles */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-value {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 2.5rem;
+        }
+        
+        .stat-change {
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+        }
+        
+        .stat-change.positive { color: var(--accent-secondary); }
+        .stat-change.negative { color: var(--accent-tertiary); }
+        
+        .timeline-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .section-title {
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .timeline-list {
+            list-style: none;
+        }
+        
+        .timeline-entry {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 0.5rem;
+            transition: background 0.3s ease;
+        }
+        
+        .timeline-entry:hover {
+            background: var(--bg-elevated);
+        }
+        
+        .entry-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+        
+        .entry-icon.work { background: rgba(87, 255, 212, 0.15); }
+        .entry-icon.rest { background: rgba(138, 43, 226, 0.15); }
+        .entry-icon.exercise { background: rgba(255, 107, 107, 0.15); }
+        .entry-icon.food { background: rgba(255, 165, 0, 0.15); }
+        
+        .entry-details {
+            flex: 1;
+        }
+        
+        .entry-name {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+        
+        .entry-time {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        
+        .entry-duration {
+            font-variant-numeric: tabular-nums;
+            color: var(--text-secondary);
+        }
+        
+        .predictions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        
+        .prediction-card {
+            background: var(--bg-elevated);
+            border-radius: 12px;
+            padding: 1rem;
+        }
+        
+        .prediction-time {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+        
+        .prediction-activity {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .prediction-confidence {
+            font-size: 0.75rem;
+            color: var(--accent-secondary);
+            margin-top: 0.5rem;
+        }
+        
+        .upgrade-banner {
+            background: linear-gradient(135deg, rgba(201, 255, 87, 0.1), rgba(87, 255, 212, 0.1));
+            border: 1px solid rgba(201, 255, 87, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        
+        .upgrade-text h3 {
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .upgrade-text p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        
+        .mobile-header {
+            display: none;
+            padding: 1rem;
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-subtle);
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        @media (max-width: 768px) {
+            .mobile-header {
+                display: flex;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Mobile Header -->
+        <div class="mobile-header">
+            <a href="/" class="logo">ZEITLINE</a>
+            <button class="btn btn-ghost" onclick="signOut()">Log out</button>
+        </div>
+        
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <a href="/" class="logo">ZEITLINE</a>
+            
+            <nav class="sidebar-nav">
+                <a href="/dashboard.html" class="nav-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    Dashboard
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="2" x2="12" y2="22"/>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                    Timeline
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="16" y1="2" x2="16" y2="6"/>
+                        <line x1="8" y1="2" x2="8" y2="6"/>
+                        <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    Calendar
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polygon points="10 8 16 12 10 16 10 8"/>
+                    </svg>
+                    Predictions
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    Insights
+                </a>
+                <a href="/settings.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Settings
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <button class="btn btn-ghost" style="width: 100%; justify-content: flex-start;" onclick="signOut()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    Log out
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="dashboard-header">
+                <h1>Welcome back, <span id="userName">User</span></h1>
+                <div class="user-menu">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                </div>
+            </div>
+            
+            <!-- Upgrade Banner - Hidden, managed in Settings -->
+            <div class="upgrade-banner" id="upgradeBanner" style="display: none;"></div>
+            
+            <!-- Stats Grid -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Activities Today</div>
+                    <div class="stat-value">7</div>
+                    <div class="stat-change positive">↑ 2 more than yesterday</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Time Tracked</div>
+                    <div class="stat-value">6h 42m</div>
+                    <div class="stat-change positive">↑ 15% from last week</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Productive Hours</div>
+                    <div class="stat-value">4h 15m</div>
+                    <div class="stat-change positive">↑ On track</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Streak</div>
+                    <div class="stat-value">12 days</div>
+                    <div class="stat-change positive">🔥 Keep it up!</div>
+                </div>
+            </div>
+            
+            <!-- Today's Timeline -->
+            <div class="timeline-section">
+                <h2 class="section-title">
+                    Today's Timeline
+                    <a href="#" class="btn btn-ghost">View all →</a>
+                </h2>
+                <ul class="timeline-list" id="timelineList">
+                    <li class="timeline-entry">
+                        <div class="entry-icon rest">😴</div>
+                        <div class="entry-details">
+                            <div class="entry-name">Sleep</div>
+                            <div class="entry-time">11:00 PM – 7:00 AM</div>
+                        </div>
+                        <div class="entry-duration">8h 00m</div>
+                    </li>
+                    <li class="timeline-entry">
+                        <div class="entry-icon food">☕</div>
+                        <div class="entry-details">
+                            <div class="entry-name">Morning Coffee</div>
+                            <div class="entry-time">7:15 AM – 7:30 AM</div>
+                        </div>
+                        <div class="entry-duration">15m</div>
+                    </li>
+                    <li class="timeline-entry">
+                        <div class="entry-icon exercise">🏃</div>
+                        <div class="entry-details">
+                            <div class="entry-name">Morning Run</div>
+                            <div class="entry-time">7:30 AM – 8:15 AM</div>
+                        </div>
+                        <div class="entry-duration">45m</div>
+                    </li>
+                    <li class="timeline-entry">
+                        <div class="entry-icon work">💻</div>
+                        <div class="entry-details">
+                            <div class="entry-name">Deep Work</div>
+                            <div class="entry-time">9:00 AM – 12:00 PM</div>
+                        </div>
+                        <div class="entry-duration">3h 00m</div>
+                    </li>
+                    <li class="timeline-entry">
+                        <div class="entry-icon food">🥗</div>
+                        <div class="entry-details">
+                            <div class="entry-name">Lunch</div>
+                            <div class="entry-time">12:00 PM – 12:45 PM</div>
+                        </div>
+                        <div class="entry-duration">45m</div>
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Predictions (Pro feature) -->
+            <div class="timeline-section" id="predictionsSection">
+                <h2 class="section-title">
+                    AI Predictions
+                    <span style="font-size: 0.75rem; padding: 0.25rem 0.5rem; background: var(--accent-primary); color: var(--bg-deep); border-radius: 100px; font-weight: 600;">PRO</span>
+                </h2>
+                <div class="predictions-grid">
+                    <div class="prediction-card">
+                        <div class="prediction-time">2:00 PM – 3:00 PM</div>
+                        <div class="prediction-activity">
+                            <span>💻</span>
+                            <span>Afternoon Focus</span>
+                        </div>
+                        <div class="prediction-confidence">92% confidence</div>
+                    </div>
+                    <div class="prediction-card">
+                        <div class="prediction-time">3:00 PM – 3:15 PM</div>
+                        <div class="prediction-activity">
+                            <span>☕</span>
+                            <span>Coffee Break</span>
+                        </div>
+                        <div class="prediction-confidence">88% confidence</div>
+                    </div>
+                    <div class="prediction-card">
+                        <div class="prediction-time">5:30 PM – 6:30 PM</div>
+                        <div class="prediction-activity">
+                            <span>🏋️</span>
+                            <span>Gym Session</span>
+                        </div>
+                        <div class="prediction-confidence">85% confidence</div>
+                    </div>
+                    <div class="prediction-card">
+                        <div class="prediction-time">7:00 PM – 8:00 PM</div>
+                        <div class="prediction-activity">
+                            <span>🍽️</span>
+                            <span>Dinner</span>
+                        </div>
+                        <div class="prediction-confidence">95% confidence</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/js/firebase-config.js"></script>
+    <script>
+        // Dashboard functionality
+        function loadDashboard(profile) {
+            // Update UI with user info
+            const firstName = profile?.personal?.fullName?.split(' ')[0] || 'User';
+            document.getElementById('userName').textContent = firstName;
+            document.getElementById('userAvatar').textContent = firstName.charAt(0).toUpperCase();
+            
+            // Pro and Free have the same features for now
+            // Upgrade option available in Settings
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            // Check for saved profile in localStorage (demo mode)
+            const savedProfile = localStorage.getItem('zeitline_profile');
+            if (savedProfile) {
+                try {
+                    const profile = JSON.parse(savedProfile);
+                    loadDashboard(profile);
+                    return; // Don't wait for auth in demo mode
+                } catch (e) {
+                    console.log('Could not load saved profile');
+                }
+            }
+            
+            // Set timeout to show dashboard anyway if auth takes too long
+            const authTimeout = setTimeout(() => {
+                console.log('Auth timeout - showing dashboard in demo mode');
+                loadDashboard({});
+            }, 2000);
+            
+            window.addEventListener('authStateChanged', async (e) => {
+                clearTimeout(authTimeout);
+                const user = e.detail;
+                
+                if (!user) {
+                    // Check if we have local data (demo mode)
+                    const localProfile = localStorage.getItem('zeitline_profile');
+                    if (localProfile) {
+                        loadDashboard(JSON.parse(localProfile));
+                        return;
+                    }
+                    window.location.href = '/login.html';
+                    return;
+                }
+                
+                // Load user profile from API
+                try {
+                    const response = await apiCall('/users/profile');
+                    const profile = response.data;
+                    
+                    // Check if onboarding complete
+                    if (!profile.onboardingComplete) {
+                        window.location.href = '/onboarding.html';
+                        return;
+                    }
+                    
+                    loadDashboard(profile);
+                } catch (error) {
+                    console.error('Error loading profile:', error);
+                    // Fallback to local storage
+                    const localProfile = localStorage.getItem('zeitline_profile');
+                    if (localProfile) {
+                        loadDashboard(JSON.parse(localProfile));
+                    }
+                }
+            });
+        });
+        
+    </script>
+</body>
+</html>
+
