@@ -910,54 +910,52 @@ async function loadCalendarEvents() {
             endDate.setHours(23, 59, 59, 999);
         }
         
-        // Load calendar events - first try local JSON, then fall back to API
+        // Load calendar events from user's connected calendars via API
         console.log(`Loading events from ${startDate.toISOString()} to ${endDate.toISOString()}`);
         
         let events = [];
         
-        // First, try to load from local JSON file
-        const jsonEvents = await loadEventsFromJSON();
-        if (jsonEvents && jsonEvents.length > 0) {
-            // Filter events to the date range we need
-            events = jsonEvents.filter(event => {
-                const eventDate = new Date(event.start);
-                return eventDate >= startDate && eventDate <= endDate;
-            });
-            console.log(`✅ Using ${events.length} events from local JSON (filtered from ${jsonEvents.length} total)`);
+        // First, try to load from API (user's connected calendars like Google, Outlook)
+        try {
+            const response = await apiCall(`/calendars/events?start=${startDate.toISOString()}&end=${endDate.toISOString()}`);
+            
+            // Check if response has data
+            if (response && response.data) {
+                events = Array.isArray(response.data) ? response.data : [];
+            } else if (response && response.success && response.data) {
+                events = Array.isArray(response.data) ? response.data : [];
+            } else {
+                console.warn('⚠️ API response format unexpected:', response);
+                events = [];
+            }
+            
+            console.log(`✅ Received ${events.length} events from API (connected calendars)`);
+            if (events.length > 0) {
+                console.log('Sample events:', events.slice(0, 3).map(e => ({
+                    title: e.title,
+                    start: e.start,
+                    calendarType: e.calendarType
+                })));
+            } else {
+                console.log('ℹ️ No events from connected calendars. User may need to connect a calendar.');
+            }
+        } catch (apiError) {
+            console.warn('⚠️ Could not load events from API:', apiError.message || apiError);
+            // Continue - will try demo events if no API events
         }
         
-        // If no local events, try API
+        // If no events from API (no calendars connected or not logged in), 
+        // fall back to demo JSON for testing/preview purposes
         if (events.length === 0) {
-            try {
-                const response = await apiCall(`/calendars/events?start=${startDate.toISOString()}&end=${endDate.toISOString()}`);
-                
-                // Check if response has data
-                if (response && response.data) {
-                    events = Array.isArray(response.data) ? response.data : [];
-                } else if (response && response.success && response.data) {
-                    events = Array.isArray(response.data) ? response.data : [];
-                } else {
-                    console.warn('⚠️ API response format unexpected:', response);
-                    events = [];
-                }
-                
-                console.log(`✅ Received ${events.length} events from API`);
-                if (events.length > 0) {
-                    console.log('Sample events:', events.slice(0, 3).map(e => ({
-                        title: e.title,
-                        start: e.start,
-                        calendarType: e.calendarType
-                    })));
-                } else {
-                    console.warn('⚠️ No events returned from API. Check:');
-                    console.warn('  1. Is Google Calendar connected?');
-                    console.warn('  2. Are calendars selected in settings?');
-                    console.warn('  3. Are there events in the date range?');
-                }
-            } catch (apiError) {
-                console.error('❌ Error loading calendar events from API:', apiError);
-                console.error('Error details:', apiError.message || apiError);
-                // Don't break - continue with empty events array
+            console.log('ℹ️ No events from API, checking for demo events...');
+            const jsonEvents = await loadEventsFromJSON();
+            if (jsonEvents && jsonEvents.length > 0) {
+                // Filter events to the date range we need
+                events = jsonEvents.filter(event => {
+                    const eventDate = new Date(event.start);
+                    return eventDate >= startDate && eventDate <= endDate;
+                });
+                console.log(`📋 Using ${events.length} demo events for preview (filtered from ${jsonEvents.length} total)`);
             }
         }
         
