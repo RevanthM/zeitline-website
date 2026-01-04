@@ -228,6 +228,8 @@ function getAuthErrorMessage(error) {
     "auth/user-disabled": "This account has been disabled.",
     "auth/user-not-found": "No account found with this email.",
     "auth/wrong-password": "Incorrect password. Please try again.",
+    "auth/invalid-login-credentials": "Invalid email or password. Please check your credentials and try again.",
+    "auth/invalid-credential": "Invalid email or password. Please check your credentials and try again.",
     "auth/too-many-requests": "Too many attempts. Please try again later.",
     "auth/popup-closed-by-user": "Sign-in popup was closed.",
     "auth/cancelled-popup-request": "Sign-in was cancelled.",

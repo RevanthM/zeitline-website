@@ -54,6 +54,23 @@ service cloud.firestore {
       match /activities/{activityId} {
         allow read, write: if isOwner(userId);
       }
+      
+      // User's calendar connections subcollection
+      match /calendars/{calendarId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's calendar events subcollection (cached events)
+      match /calendar_events/{eventId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+    
+    // OAuth states collection (temporary, for OAuth flow)
+    // This is at root level, not under users
+    match /oauth_states/{stateId} {
+      // Allow read/write if user is authenticated (state contains uid)
+      allow read, write: if isAuthenticated();
     }
     
     // Stripe customers collection (managed by webhook)

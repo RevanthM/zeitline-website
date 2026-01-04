@@ -58,6 +58,12 @@
                 <button type="submit" class="btn btn-primary" style="width: 100%;">Log In</button>
             </form>
             
+            <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-subtle);">
+                <button onclick="createTestAccount()" class="btn btn-secondary" style="width: 100%;">
+                    🧪 Use Test Account (No Backend Required)
+                </button>
+            </div>
+            
             <p class="auth-footer">
                 Don't have an account? <a href="/signup.html">Sign up</a>
             </p>
@@ -75,8 +81,55 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/js/firebase-config.js"></script>
+    <script src="/js/firebase-config.js?v=2.1"></script>
     <script src="/js/auth.js"></script>
+    <script src="/js/test-account.js"></script>
+    <script>
+        // Make createTestAccount available globally
+        function createTestAccount() {
+            const testProfile = {
+                uid: "test-user-123",
+                email: "test@zeitline.com",
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                plan: "free",
+                onboardingComplete: true,
+                onboardingStep: 4,
+                personal: {
+                    fullName: "Test User",
+                    age: 25,
+                    occupation: "Software Developer",
+                    location: "San Francisco, CA",
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    interests: ["Technology", "Productivity", "Health"],
+                    lifeGoals: ["Build great products", "Stay healthy", "Learn continuously"],
+                    lifestyle: {
+                        morningPerson: true,
+                        workStyle: "Remote",
+                        sleepHours: 8
+                    }
+                },
+                financial: {
+                    salary: 100000,
+                    netWorth: 50000,
+                    currency: "USD",
+                    spendingCategories: ["Food", "Transportation", "Entertainment"],
+                    financialGoals: ["Save for house", "Invest in stocks"]
+                }
+            };
+
+            // Store profile
+            localStorage.setItem("zeitline_profile", JSON.stringify(testProfile));
+            localStorage.setItem("zeitline_onboarding_complete", "true");
+            localStorage.setItem("authToken", "test-token-12345");
+            
+            // Show success message
+            alert("✅ Test account created! Redirecting to dashboard...");
+            
+            // Redirect to dashboard
+            window.location.href = "/dashboard.html";
+        }
+    </script>
 </body>
 </html>
 

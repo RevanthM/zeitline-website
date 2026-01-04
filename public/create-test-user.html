@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Test User – Zeitline</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #0a0a0a;
+            color: #fff;
+        }
+        .container {
+            background: #1a1a1a;
+            padding: 30px;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        button {
+            background: #c9ff57;
+            color: #000;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #b8e84a;
+        }
+        button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        .status.success {
+            background: #1a4d1a;
+            border: 1px solid #2d7a2d;
+            display: block;
+        }
+        .status.error {
+            background: #4d1a1a;
+            border: 1px solid #7a2d2d;
+            display: block;
+        }
+        .status.info {
+            background: #1a1a4d;
+            border: 1px solid #2d2d7a;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Create Test User</h1>
+        <p>This will create a Firebase Auth user with:</p>
+        <ul>
+            <li>Email: <strong>test@gmail.com</strong></li>
+            <li>Password: <strong>test123</strong></li>
+        </ul>
+        <button id="createUserBtn" onclick="createUser()">Create User</button>
+        <div id="status" class="status"></div>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="/js/firebase-config.js?v=2.0"></script>
+    
+    <script>
+        async function createUser() {
+            const btn = document.getElementById('createUserBtn');
+            const status = document.getElementById('status');
+            
+            btn.disabled = true;
+            status.className = 'status info';
+            status.textContent = 'Creating user...';
+            
+            try {
+                // Try to create the user
+                const userCredential = await firebase.auth().createUserWithEmailAndPassword('test@gmail.com', 'test123');
+                
+                status.className = 'status success';
+                status.textContent = `✅ User created successfully!\n\nUID: ${userCredential.user.uid}\nEmail: ${userCredential.user.email}\n\nYou can now log in with:\nEmail: test@gmail.com\nPassword: test123`;
+                
+                // Sign out after creation so they can test login
+                setTimeout(async () => {
+                    await firebase.auth().signOut();
+                    status.textContent += '\n\n(Signed out - you can now test logging in)';
+                }, 2000);
+                
+            } catch (error) {
+                status.className = 'status error';
+                if (error.code === 'auth/email-already-in-use') {
+                    // User exists, try to sign in to verify
+                    try {
+                        await firebase.auth().signInWithEmailAndPassword('test@gmail.com', 'test123');
+                        status.className = 'status success';
+                        status.textContent = '✅ User already exists and password is correct!\n\nYou can log in with:\nEmail: test@gmail.com\nPassword: test123';
+                        await firebase.auth().signOut();
+                    } catch (signInError) {
+                        status.textContent = `User exists but password might be wrong. Error: ${signInError.message}\n\nTry creating the user again or use a different email.`;
+                    }
+                } else if (error.code === 'auth/invalid-login-credentials' || error.code === 'auth/invalid-credential') {
+                    status.textContent = 'Invalid credentials. This might mean the user exists with a different password.';
+                } else {
+                    status.textContent = `Error: ${error.code} - ${error.message}`;
+                }
+            }
+            
+            btn.disabled = false;
+        }
+        
+        // Don't auto-create, let user click the button
+    </script>
+</body>
+</html>
+

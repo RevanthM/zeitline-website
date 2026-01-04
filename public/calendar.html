@@ -1,0 +1,2325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Calendar – Zeitline</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        /* Calendar Page Styles */
+        /* Collapse sidebar on calendar page */
+        body:has(.dashboard) .dashboard .sidebar {
+            width: 80px;
+            padding: 1.5rem 0.5rem;
+            transition: width 0.3s ease;
+        }
+        
+        body:has(.dashboard) .dashboard .sidebar .logo {
+            font-size: 0.9rem;
+            text-align: center;
+            padding: 0;
+            letter-spacing: 0.1em;
+        }
+        
+        body:has(.dashboard) .dashboard .sidebar .nav-item {
+            justify-content: center;
+            padding: 0.85rem 0.5rem;
+            font-size: 0;
+        }
+        
+        body:has(.dashboard) .dashboard .sidebar .nav-item svg {
+            margin: 0;
+            flex-shrink: 0;
+            font-size: 20px;
+        }
+        
+        body:has(.dashboard) .dashboard .sidebar .nav-item::after {
+            content: none;
+        }
+        
+        body:has(.dashboard) .dashboard .sidebar .sidebar-footer {
+            padding: 1rem 0.5rem 0;
+        }
+        
+        body:has(.dashboard) .dashboard .sidebar .sidebar-footer button {
+            justify-content: center;
+            padding: 0.5rem;
+            width: 100%;
+        }
+        
+        body:has(.dashboard) .dashboard .sidebar .sidebar-footer button svg {
+            margin: 0;
+        }
+        
+        .calendar-view-container {
+            display: block;
+            width: 100%;
+        }
+        
+        .calendar-main {
+            display: block;
+            width: 100%;
+        }
+        
+        /* Cal.com-inspired section styling */
+        .calendar-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .calendar-section:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+        
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .calendar-header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .calendar-zoom-controls {
+            display: none;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        .calendar-zoom-controls.visible {
+            display: flex;
+        }
+        
+        .zoom-control-btn {
+            padding: 0.5rem 1rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        .zoom-control-btn:hover {
+            background: rgba(255,255,255,0.08);
+            color: var(--text-primary);
+            border-color: var(--accent-primary);
+        }
+        
+        .zoom-control-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .zoom-control-btn:disabled:hover {
+            background: var(--bg-elevated);
+            border-color: var(--border-subtle);
+            color: var(--text-secondary);
+        }
+        
+        .calendar-title {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 1.375rem;
+            font-weight: 400;
+        }
+        
+        .calendar-nav {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        .calendar-nav button {
+            width: 36px;
+            height: 36px;
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .calendar-nav button:hover {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-primary);
+        }
+        
+        .view-toggle {
+            display: flex;
+            gap: 0.5rem;
+            margin-left: 0;
+        }
+        
+        /* Cal.com-inspired view toggle buttons */
+        .view-toggle button {
+            padding: 8px 16px;
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            font-weight: 500;
+        }
+        
+        .view-toggle button.active {
+            background: var(--accent-primary);
+            color: var(--bg-deep);
+            border-color: var(--accent-primary);
+            box-shadow: 0 2px 8px rgba(201, 255, 87, 0.2);
+        }
+        
+        .view-toggle button:hover:not(.active) {
+            background: rgba(255,255,255,0.06);
+            border-color: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+        
+        .calendar-grid-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            padding: 0;
+            overflow: hidden;
+            width: 100%;
+            display: flex;
+        }
+        
+        .calendar-grid-container.day-view-active,
+        .calendar-grid-container.week-view-active {
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            width: 100%;
+            max-width: 100%;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        
+        .calendar-time-column {
+            width: 80px;
+            flex-shrink: 0;
+            border-right: 1px solid var(--border-subtle);
+            background: var(--bg-deep);
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            /* Height: 70px spacer + 24 hours * 60px = 1510px (Google Calendar style) */
+            /* Half-hour markers are visual only - they don't affect the 60px per hour structure */
+            height: 1510px;
+            box-sizing: border-box;
+        }
+        
+        .time-column-spacer {
+            height: 70px; /* Match weekday header height exactly */
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-deep);
+        }
+        
+        .time-label.midnight {
+            border-top: 1px solid var(--border-subtle);
+        }
+        
+        .calendar-time-column.hidden {
+            display: none;
+        }
+        
+        .time-label {
+            height: 60px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-end;
+            padding-right: 8px;
+            padding-top: 0; /* Remove padding to align text with top of slot */
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+            font-weight: 400;
+            border-bottom: 1px solid transparent;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+        
+        .time-label.hour-line {
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        
+        .time-label.half-hour {
+            height: 30px;
+            font-size: 0;
+            border-bottom: 1px solid transparent;
+            flex-shrink: 0;
+        }
+        
+        .calendar-content-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            min-height: 0;
+            overflow: hidden;
+        }
+        
+        .calendar-weekdays {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .calendar-grid-container.day-view-active .calendar-day,
+        .calendar-grid-container.week-view-active .calendar-day {
+            /* Height: 70px spacer + 24 hours * 60px = 1510px (matches time column) */
+            min-height: 1510px;
+            position: relative;
+            box-sizing: border-box;
+        }
+        
+        /* Add horizontal lines after each hour in week/day view */
+        .calendar-grid-container.day-view-active .calendar-day::before,
+        .calendar-grid-container.week-view-active .calendar-day::before {
+            content: '';
+            position: absolute;
+            top: 70px; /* Offset to match time column spacer and weekday header bottom */
+            left: 0;
+            right: 0;
+            height: 1440px; /* 24 hours * 60px = 1440px (Google Calendar style) */
+            border-top: 1px solid var(--border-subtle); /* First line at the top (above 12 AM) */
+            background-image: repeating-linear-gradient(
+                to bottom,
+                transparent 0,
+                transparent 59px,
+                var(--border-subtle) 59px,
+                var(--border-subtle) 60px
+            );
+            pointer-events: none;
+            z-index: 1;
+        }
+        
+        /* Add half-hour lines in day/week view */
+        .calendar-grid-container.day-view-active .calendar-day::after,
+        .calendar-grid-container.week-view-active .calendar-day::after {
+            content: '';
+            position: absolute;
+            top: 70px; /* Offset to match time column spacer and weekday header bottom */
+            left: 0;
+            right: 0;
+            height: 1440px; /* 24 hours * 60px = 1440px (Google Calendar style) */
+            background-image: repeating-linear-gradient(
+                to bottom,
+                transparent 0,
+                transparent 29px,
+                rgba(255, 255, 255, 0.05) 29px,
+                rgba(255, 255, 255, 0.05) 30px,
+                transparent 30px,
+                transparent 59px,
+                rgba(255, 255, 255, 0.05) 59px,
+                rgba(255, 255, 255, 0.05) 60px
+            );
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        /* Ensure events are above the lines */
+        .calendar-grid-container.day-view-active .calendar-day .week-view-day-events,
+        .calendar-grid-container.week-view-active .calendar-day .week-view-day-events {
+            position: absolute;
+            top: 70px; /* Match time column spacer and weekday header bottom */
+            left: 0;
+            right: 0;
+            /* Height: 24 hours * 60px = 1440px (Google Calendar style - each hour is 60px) */
+            height: 1440px;
+            z-index: 2;
+            box-sizing: border-box;
+        }
+        
+        .calendar-weekdays.hidden {
+            display: none;
+        }
+        
+        .weekday {
+            text-align: center;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 0.5rem;
+        }
+        
+        .weekday.selected .weekday-date {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: var(--accent-primary);
+            color: var(--bg-deep);
+            border-radius: 50%;
+            font-weight: 500;
+        }
+        
+        .weekday-name {
+            font-size: 0.6875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0;
+            margin-bottom: 6px;
+            line-height: 1.2;
+        }
+        
+        .weekday-date {
+            font-size: 1.375rem;
+            font-weight: 400;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+        
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.5rem;
+        }
+        
+        .calendar-grid.week-view {
+            grid-template-columns: repeat(7, 1fr);
+        }
+        
+        .week-day {
+            min-height: 150px;
+        }
+        
+        /* Day View - Matching Week View Style */
+        .day-view-wrapper {
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            overflow: hidden;
+            width: 100%;
+            max-width: 100%;
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .day-view-header {
+            display: grid;
+            grid-template-columns: 60px repeat(7, 1fr);
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-deep);
+        }
+        
+        .day-view-header-spacer {
+            border-right: 1px solid var(--border-subtle);
+        }
+        
+        .day-view-day-header {
+            border-right: 1px solid var(--border-subtle);
+            padding: 12px 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 60px;
+        }
+        
+        .day-view-day-header:last-child {
+            border-right: none;
+        }
+        
+        .day-view-day-header:hover {
+            background: rgba(255,255,255,0.03);
+        }
+        
+        .day-view-day-header.today {
+            background: rgba(201, 255, 87, 0.1);
+        }
+        
+        .day-view-day-name {
+            font-size: 0.6875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            letter-spacing: 0;
+            line-height: 1.2;
+        }
+        
+        .day-view-day-number {
+            font-size: 1.375rem;
+            font-weight: 400;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+        
+        .day-view-day-header.today .day-view-day-number {
+            color: var(--accent-primary);
+            font-weight: 500;
+        }
+        
+        .day-view-container {
+            display: flex;
+            position: relative;
+            max-height: calc(100vh - 400px);
+            overflow-y: auto;
+            overflow-x: auto;
+            width: 100%;
+            max-width: 100%;
+            flex: 1;
+            align-items: flex-start;
+        }
+        
+        .day-view-container > .day-view-time-column {
+            flex-shrink: 0;
+            width: 60px;
+            height: 1440px; /* Force full height - 24 hours * 60px */
+        }
+        
+        .day-view-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .day-view-container::-webkit-scrollbar-track {
+            background: var(--bg-elevated);
+        }
+        
+        .day-view-container::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 4px;
+        }
+        
+        .day-view-time-column {
+            width: 60px;
+            flex-shrink: 0;
+            border-right: 1px solid var(--border-subtle);
+            background: var(--bg-deep);
+            position: relative;
+            height: 1440px; /* 24 hours * 60px - force full height */
+            min-height: 1440px;
+        }
+        
+        .day-view-time-slot {
+            height: 60px;
+            border-bottom: 1px solid var(--border-subtle);
+            position: relative;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-end;
+            padding-right: 8px;
+            padding-top: 0;
+        }
+        
+        .day-view-time-slot.half-hour {
+            height: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .day-view-time-label {
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+        
+        .day-view-time-label.hour-label {
+            font-weight: 400;
+        }
+        
+        .day-view-day-column {
+            border-right: 1px solid var(--border-subtle);
+            position: relative;
+            min-height: 1440px; /* 24 hours * 60px */
+        }
+        
+        .day-view-day-column:last-child {
+            border-right: none;
+        }
+        
+        .day-view-hour-slot {
+            border-right: 1px solid var(--border-subtle);
+        }
+        
+        .day-view-day-column:last-child .day-view-hour-slot,
+        .day-view-day-column:last-child .day-view-hour-slot.half-hour {
+            border-right: none;
+        }
+        
+        .day-view-days {
+            display: grid;
+            grid-template-columns: 1fr;
+            position: relative;
+            min-height: 1440px; /* 24 hours * 60px */
+            width: 100%;
+            flex: 1;
+        }
+        
+        .day-view-day-column {
+            width: 100%;
+            min-width: 300px;
+        }
+        
+        .day-view-header {
+            display: grid;
+            grid-template-columns: 60px 1fr;
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-deep);
+            width: 100%;
+            max-width: 100%;
+        }
+        
+        .day-view-day-header {
+            border-right: 1px solid var(--border-subtle);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        .day-view-day-name {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 0.5px;
+        }
+        
+        .day-view-day-number {
+            font-size: 1.5rem;
+            font-weight: 400;
+            color: var(--text-primary);
+        }
+        
+        .day-view-day-number.today-circle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            background: var(--accent-primary);
+            color: var(--bg-deep);
+            border-radius: 50%;
+        }
+        
+        .day-view-hour-slot {
+            height: 60px;
+            border-bottom: 1px solid var(--border-subtle);
+            border-right: 1px solid var(--border-subtle);
+            position: relative;
+        }
+        
+        .day-view-hour-slot.half-hour {
+            height: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid var(--border-subtle);
+        }
+        
+        .day-view-day-column:last-child .day-view-hour-slot,
+        .day-view-day-column:last-child .day-view-hour-slot.half-hour {
+            border-right: none;
+        }
+        
+        .day-view-current-time {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #ea4335;
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        .day-view-current-time::before {
+            content: '';
+            position: absolute;
+            left: -6px;
+            top: -4px;
+            width: 10px;
+            height: 10px;
+            background: #ea4335;
+            border-radius: 50%;
+        }
+        
+        .day-view-day-events {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 0 2px;
+        }
+        
+        /* Google Calendar-style Week View */
+        .week-view-wrapper {
+            display: flex;
+            flex-direction: column;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            overflow: hidden;
+            width: 100%;
+            max-width: 100%;
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .week-view-header {
+            display: grid;
+            grid-template-columns: 60px repeat(7, minmax(120px, 1fr));
+            border-bottom: 1px solid var(--border-subtle);
+            background: var(--bg-deep);
+            width: 100%;
+            max-width: 100%;
+        }
+        
+        .week-view-header-spacer {
+            border-right: 1px solid var(--border-subtle);
+        }
+        
+        .week-view-day-header {
+            border-right: 1px solid var(--border-subtle);
+            padding: 12px 8px;
+            text-align: center;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 60px;
+        }
+        
+        .week-view-day-header:last-child {
+            border-right: none;
+        }
+        
+        .week-view-day-header:hover {
+            background: rgba(255,255,255,0.03);
+        }
+        
+        .week-view-day-header.today {
+            background: rgba(201, 255, 87, 0.1);
+        }
+        
+        .week-view-day-name {
+            font-size: 0.6875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            letter-spacing: 0;
+            line-height: 1.2;
+        }
+        
+        .week-view-day-number {
+            font-size: 1.375rem;
+            font-weight: 400;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+        
+        .week-view-day-header.today .week-view-day-number {
+            color: var(--accent-primary);
+            font-weight: 500;
+        }
+        
+        .week-view-container {
+            display: flex;
+            position: relative;
+            max-height: calc(100vh - 400px);
+            overflow-y: auto;
+            overflow-x: auto;
+            width: 100%;
+            max-width: 100%;
+            flex: 1;
+            align-items: flex-start;
+        }
+        
+        .week-view-container > .week-view-time-column {
+            flex-shrink: 0;
+            width: 60px;
+            height: 1440px; /* Force full height - 24 hours * 60px */
+        }
+        
+        .week-view-container > .week-view-days {
+            flex: 1;
+            min-width: 0;
+            display: grid;
+            grid-template-columns: repeat(7, minmax(120px, 1fr));
+            width: 100%;
+        }
+        
+        .week-view-container::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .week-view-container::-webkit-scrollbar-track {
+            background: var(--bg-elevated);
+        }
+        
+        .week-view-container::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 4px;
+        }
+        
+        .week-view-time-column {
+            width: 60px;
+            flex-shrink: 0;
+            border-right: 1px solid var(--border-subtle);
+            background: var(--bg-deep);
+            position: relative;
+            height: 1440px; /* 24 hours * 60px - force full height */
+            min-height: 1440px;
+        }
+        
+        .week-view-time-slot {
+            height: 60px;
+            border-bottom: 1px solid var(--border-subtle);
+            position: relative;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-end;
+            padding-right: 8px;
+            padding-top: 0;
+        }
+        
+        .week-view-time-slot.half-hour {
+            height: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .week-view-time-label {
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+        
+        .week-view-time-label.hour-label {
+            font-weight: 400;
+        }
+        
+        .week-view-days {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(120px, 1fr));
+            position: relative;
+            min-height: 1440px; /* 24 hours * 60px */
+            width: 100%;
+            flex: 1;
+            gap: 0;
+        }
+        
+        .week-view-day-column {
+            border-right: 1px solid var(--border-subtle);
+            position: relative;
+            min-width: 120px;
+            width: 100%;
+            overflow: hidden;
+        }
+        
+        .week-view-day-column:last-child {
+            border-right: none;
+        }
+        
+        .week-view-hour-slot {
+            height: 60px;
+            border-bottom: 1px solid var(--border-subtle);
+            border-right: 1px solid var(--border-subtle);
+            position: relative;
+        }
+        
+        .week-view-hour-slot.half-hour {
+            height: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            border-right: 1px solid var(--border-subtle);
+        }
+        
+        .week-view-day-column:last-child .week-view-hour-slot,
+        .week-view-day-column:last-child .week-view-hour-slot.half-hour {
+            border-right: none;
+        }
+        
+        .week-view-current-time {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #ea4335;
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        .week-view-current-time::before {
+            content: '';
+            position: absolute;
+            left: -6px;
+            top: -4px;
+            width: 10px;
+            height: 10px;
+            background: #ea4335;
+            border-radius: 50%;
+        }
+        
+        .week-view-day-events {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 0 2px;
+            cursor: pointer;
+        }
+        
+        .week-view-day-events:hover {
+            background: rgba(201, 255, 87, 0.02);
+        }
+        
+        /* Quick event creation visual feedback */
+        .week-view-day-events:active {
+            background: rgba(201, 255, 87, 0.05);
+        }
+        
+        
+        /* Cal.com-inspired event styling */
+        .day-event-item {
+            position: absolute;
+            left: 0;
+            right: 0;
+            background: var(--bg-elevated);
+            border-left: 4px solid;
+            border-radius: 6px;
+            padding: 4px 8px;
+            margin: 2px 4px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            z-index: 5;
+            font-size: 0.75rem;
+            line-height: 1.4;
+            backdrop-filter: blur(10px);
+        }
+        
+        .day-event-item:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            transform: translateY(-1px);
+            z-index: 10;
+            border-left-width: 5px;
+        }
+        
+        .day-event-item:active {
+            transform: translateY(0);
+        }
+        
+        .day-event-item.week-event {
+            margin: 1px 2px;
+            font-size: 0.6875rem;
+            padding: 1px 4px;
+        }
+        
+        /* Cal.com-inspired event colors with better contrast */
+        .day-event-item.google { 
+            border-left-color: #4285f4;
+            background: linear-gradient(90deg, rgba(66, 133, 244, 0.2) 0%, rgba(66, 133, 244, 0.1) 100%);
+            color: #e8f0fe;
+        }
+        .day-event-item.google:hover {
+            background: linear-gradient(90deg, rgba(66, 133, 244, 0.3) 0%, rgba(66, 133, 244, 0.15) 100%);
+        }
+        .day-event-item.outlook { 
+            border-left-color: #0078d4;
+            background: linear-gradient(90deg, rgba(0, 120, 212, 0.2) 0%, rgba(0, 120, 212, 0.1) 100%);
+            color: #deecf9;
+        }
+        .day-event-item.outlook:hover {
+            background: linear-gradient(90deg, rgba(0, 120, 212, 0.3) 0%, rgba(0, 120, 212, 0.15) 100%);
+        }
+        .day-event-item.apple { 
+            border-left-color: #86868b;
+            background: linear-gradient(90deg, rgba(134, 134, 139, 0.2) 0%, rgba(134, 134, 139, 0.1) 100%);
+            color: #f5f5f7;
+        }
+        .day-event-item.apple:hover {
+            background: linear-gradient(90deg, rgba(134, 134, 139, 0.3) 0%, rgba(134, 134, 139, 0.15) 100%);
+        }
+        .day-event-item.zeitline { 
+            border-left-color: var(--accent-primary);
+            background: linear-gradient(90deg, rgba(201, 255, 87, 0.2) 0%, rgba(201, 255, 87, 0.1) 100%);
+            color: #f0f0f5;
+        }
+        .day-event-item.zeitline:hover {
+            background: linear-gradient(90deg, rgba(201, 255, 87, 0.3) 0%, rgba(201, 255, 87, 0.15) 100%);
+        }
+        .day-event-item.multiple { 
+            border-left-color: var(--accent-secondary);
+            background: linear-gradient(90deg, rgba(87, 255, 212, 0.2) 0%, rgba(87, 255, 212, 0.1) 100%);
+            color: #f0f0f5;
+        }
+        .day-event-item.multiple:hover {
+            background: linear-gradient(90deg, rgba(87, 255, 212, 0.3) 0%, rgba(87, 255, 212, 0.15) 100%);
+        }
+        
+        .event-title {
+            font-weight: 400;
+            font-size: 0.8125rem;
+            margin-bottom: 0;
+            line-height: 1.3;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .event-time {
+            font-size: 0.6875rem;
+            color: var(--text-secondary);
+            margin-top: 1px;
+            line-height: 1.2;
+        }
+        
+        .event-location {
+            font-size: 0.6875rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+            opacity: 0.8;
+            line-height: 1.2;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        /* Cal.com-inspired calendar day styling */
+        .calendar-day {
+            min-height: 120px;
+            background: transparent;
+            border-right: 1px solid var(--border-subtle);
+            border-bottom: 1px solid var(--border-subtle);
+            border-radius: 0;
+            padding: 6px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        
+        .calendar-day:last-child {
+            border-right: none;
+        }
+        
+        .calendar-day:hover {
+            background: rgba(255,255,255,0.04);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+        }
+        
+        .calendar-day.today {
+            background: rgba(201, 255, 87, 0.05);
+        }
+        
+        .calendar-day.today:hover {
+            background: rgba(201, 255, 87, 0.08);
+        }
+        
+        /* Drag and Drop Styles */
+        .calendar-day.drop-zone {
+            background: rgba(201, 255, 87, 0.08);
+        }
+        
+        .calendar-day.drag-over {
+            background: rgba(201, 255, 87, 0.12);
+            box-shadow: inset 0 0 0 2px var(--accent-primary);
+        }
+        
+        .day-event-item[draggable="true"] {
+            cursor: grab;
+        }
+        
+        .day-event-item[draggable="true"]:active {
+            cursor: grabbing;
+        }
+        
+        .drop-indicator {
+            animation: pulse 1s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .calendar-day.other-month {
+            background: var(--bg-elevated);
+            opacity: 0.4;
+        }
+        
+        .calendar-day.today {
+            background: rgba(201, 255, 87, 0.1);
+        }
+        
+        .calendar-day.today .day-number {
+            background: var(--accent-primary);
+            color: var(--bg-deep);
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
+        }
+        
+        .calendar-day.selected {
+            background: rgba(201, 255, 87, 0.08);
+        }
+        
+        .calendar-day.empty {
+            background: transparent;
+            border: none;
+            pointer-events: none;
+        }
+        
+        .day-number {
+            font-size: 0.8125rem;
+            font-weight: 400;
+            margin-bottom: 4px;
+            color: var(--text-primary);
+        }
+        
+        /* Month view events - Google Calendar style */
+        .month-view-events {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-top: 2px;
+            max-height: calc(100% - 24px);
+            overflow: hidden;
+        }
+        
+        .month-view-event {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 0.6875rem;
+            line-height: 1.2;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-height: 16px;
+        }
+        
+        .month-view-event:hover {
+            opacity: 0.8;
+            transform: translateX(2px);
+        }
+        
+        .event-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        
+        .event-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--text-primary);
+            font-weight: 400;
+        }
+        
+        .event-time {
+            color: var(--text-muted);
+            font-size: 0.625rem;
+            flex-shrink: 0;
+            margin-left: auto;
+        }
+        
+        .month-view-more-events {
+            font-size: 0.6875rem;
+            color: var(--text-secondary);
+            padding: 2px 4px;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.15s ease;
+        }
+        
+        .month-view-more-events:hover {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-primary);
+            padding: 2px 4px;
+            display: inline-block;
+        }
+        
+        .day-events {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            margin-top: 2px;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .event-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 0.25rem;
+        }
+        
+        .event-item {
+            font-size: 0.6875rem;
+            color: var(--text-primary);
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: transparent;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            margin: 0;
+            line-height: 1.3;
+            border-left: 3px solid transparent;
+        }
+        
+        .event-item:hover {
+            background: rgba(255,255,255,0.08);
+            transform: translateX(2px);
+        }
+        
+        .event-item.google { 
+            border-left-color: #4285f4; 
+            background: rgba(66, 133, 244, 0.1);
+        }
+        .event-item.outlook { 
+            border-left-color: #0078d4; 
+            background: rgba(0, 120, 212, 0.1);
+        }
+        .event-item.apple { 
+            border-left-color: #000000; 
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .event-item.zeitline { 
+            border-left-color: var(--accent-primary); 
+            background: rgba(201, 255, 87, 0.1);
+        }
+        .event-item.multiple { 
+            border-left-color: var(--accent-secondary); 
+            background: rgba(87, 255, 212, 0.1);
+        }
+        
+        .more-events {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+            cursor: pointer;
+        }
+        
+        .calendar-connection {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            margin-bottom: 0.5rem;
+            transition: all 0.3s ease;
+        }
+        
+        .calendar-connection:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        
+        .calendar-connection.connected {
+            border-color: var(--accent-secondary);
+        }
+        
+        .calendar-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            overflow: hidden;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+        }
+        
+        .calendar-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            padding: 4px;
+        }
+        
+        .calendar-icon.google { 
+            background: rgba(66, 133, 244, 0.1);
+            border: 1px solid rgba(66, 133, 244, 0.2);
+        }
+        .calendar-icon.outlook { 
+            background: rgba(0, 120, 212, 0.1);
+            border: 1px solid rgba(0, 120, 212, 0.2);
+        }
+        .calendar-icon.apple { 
+            background: rgba(0, 0, 0, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .calendar-info {
+            flex: 1;
+        }
+        
+        .calendar-name {
+            font-weight: 500;
+            font-size: 0.9rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .calendar-status {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .calendar-status.connected {
+            color: var(--accent-secondary);
+        }
+        
+        .connect-btn {
+            padding: 0.5rem 1rem;
+            background: var(--accent-primary);
+            color: var(--bg-deep);
+            border: none;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .connect-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px var(--glow-primary);
+        }
+        
+        .connect-btn.connected {
+            background: transparent;
+            color: var(--accent-secondary);
+            border: 1px solid var(--accent-secondary);
+        }
+        
+        /* Cal.com-inspired Event Modal */
+        .event-detail-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(5, 5, 8, 0.85);
+            backdrop-filter: blur(12px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            padding: 2rem;
+            animation: fadeIn 0.2s ease-out;
+        }
+        
+        .event-detail-modal.active {
+            display: flex;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .event-detail-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 0;
+            max-width: 600px;
+            width: 100%;
+            max-height: 90vh;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        @keyframes slideUp {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .event-detail-header {
+            padding: 2rem 2rem 1.5rem;
+            border-bottom: 1px solid var(--border-subtle);
+            position: relative;
+        }
+        
+        .event-detail-close {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            width: 36px;
+            height: 36px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            line-height: 1;
+        }
+        
+        .event-detail-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+            border-color: var(--border-focus);
+        }
+        
+        .event-detail-title {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 1.75rem;
+            font-weight: 400;
+            margin: 0 0 0.5rem 0;
+            color: var(--text-primary);
+            line-height: 1.3;
+            padding-right: 3rem;
+        }
+        
+        .event-detail-time {
+            font-size: 0.9375rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .event-detail-body {
+            padding: 1.5rem 2rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+        
+        .event-detail-section {
+            margin-bottom: 1.5rem;
+        }
+        
+        .event-detail-section:last-child {
+            margin-bottom: 0;
+        }
+        
+        .event-detail-section-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+        }
+        
+        .event-detail-section-content {
+            font-size: 0.9375rem;
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+        
+        .event-detail-info-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: var(--bg-elevated);
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+        }
+        
+        .event-detail-info-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .event-detail-info-icon {
+            width: 20px;
+            height: 20px;
+            flex-shrink: 0;
+            margin-top: 2px;
+            color: var(--text-secondary);
+        }
+        
+        .event-detail-info-content {
+            flex: 1;
+        }
+        
+        .event-detail-info-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.25rem;
+        }
+        
+        .event-detail-info-value {
+            font-size: 0.9375rem;
+            color: var(--text-primary);
+        }
+        
+        .event-detail-description {
+            color: var(--text-secondary);
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+        
+        .event-detail-footer {
+            padding: 1.5rem 2rem;
+            border-top: 1px solid var(--border-subtle);
+            display: flex;
+            gap: 0.75rem;
+            justify-content: flex-end;
+            background: var(--bg-elevated);
+        }
+        
+        .event-detail-actions {
+            display: flex;
+            gap: 0.75rem;
+            width: 100%;
+        }
+        
+        .event-detail-actions .btn {
+            flex: 1;
+            padding: 0.75rem 1.5rem;
+            font-size: 0.875rem;
+        }
+        
+        .event-detail-actions .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+        
+        .event-detail-actions .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--border-focus);
+            color: var(--text-primary);
+        }
+        
+        .event-detail-actions .btn-danger {
+            background: transparent;
+            border: 1px solid var(--error);
+            color: var(--error);
+        }
+        
+        .event-detail-actions .btn-danger:hover {
+            background: rgba(255, 107, 107, 0.1);
+        }
+        
+        .event-detail-calendar-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.375rem 0.75rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 6px;
+            font-size: 0.8125rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+        
+        .event-detail-calendar-badge.google {
+            border-left: 3px solid #4285f4;
+        }
+        
+        .event-detail-calendar-badge.outlook {
+            border-left: 3px solid #0078d4;
+        }
+        
+        .event-detail-calendar-badge.apple {
+            border-left: 3px solid #86868b;
+        }
+        
+        .event-detail-calendar-badge.zeitline {
+            border-left: 3px solid var(--accent-primary);
+        }
+        
+        .event-detail-close {
+            position: absolute;
+            top: 1.5rem;
+            right: 1.5rem;
+            width: 36px;
+            height: 36px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        
+        .event-detail-close:hover {
+            background: rgba(255,255,255,0.1);
+            color: var(--text-primary);
+        }
+        
+        .event-detail-title {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .event-detail-time {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+        
+        .event-detail-actions {
+            display: flex;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+        }
+        
+        @media (max-width: 1024px) {
+            .calendar-view-container {
+                grid-template-columns: 1fr;
+            }
+            
+            .calendar-sidebar {
+                display: none;
+            }
+        }
+        /* AI Assistant Chatbot Styles */
+        .ai-assistant-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 1000;
+            font-family: 'DM Sans', sans-serif;
+        }
+        
+        .ai-assistant-toggle {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-deep);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 4px 16px rgba(201, 255, 87, 0.3);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+        }
+        
+        .ai-assistant-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 24px rgba(201, 255, 87, 0.4);
+        }
+        
+        .ai-assistant-badge {
+            position: absolute;
+            top: -4px;
+            right: -4px;
+            background: var(--error);
+            color: white;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border: 2px solid var(--bg-deep);
+        }
+        
+        .ai-assistant-panel {
+            position: absolute;
+            bottom: 80px;
+            right: 0;
+            width: 400px;
+            max-width: calc(100vw - 48px);
+            height: 600px;
+            max-height: calc(100vh - 120px);
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            display: none;
+            flex-direction: column;
+            overflow: hidden;
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        .ai-assistant-panel.active {
+            display: flex;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .ai-assistant-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-elevated);
+        }
+        
+        .ai-assistant-header-content {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        
+        .ai-assistant-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-deep);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .ai-assistant-header-text h3 {
+            margin: 0;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .ai-assistant-status {
+            margin: 0;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .ai-assistant-close {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+        
+        .ai-assistant-close:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+        
+        .ai-assistant-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .ai-assistant-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .ai-assistant-messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        
+        .ai-assistant-messages::-webkit-scrollbar-thumb {
+            background: var(--border-subtle);
+            border-radius: 3px;
+        }
+        
+        .ai-message {
+            display: flex;
+            gap: 0.75rem;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .ai-message-user {
+            flex-direction: row-reverse;
+        }
+        
+        .ai-message-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        
+        .ai-message-assistant .ai-message-avatar {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-deep);
+        }
+        
+        .ai-message-content {
+            flex: 1;
+            background: var(--bg-elevated);
+            padding: 0.75rem 1rem;
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+        
+        .ai-message-user .ai-message-content {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-deep);
+        }
+        
+        .ai-message-content p {
+            margin: 0;
+        }
+        
+        .ai-message-content ul {
+            margin: 0.5rem 0;
+            padding-left: 1.25rem;
+        }
+        
+        .ai-message-content li {
+            margin: 0.25rem 0;
+        }
+        
+        .ai-assistant-input-container {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid var(--border-subtle);
+            background: var(--bg-elevated);
+        }
+        
+        .ai-assistant-suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+        
+        .ai-suggestion-chip {
+            padding: 0.5rem 0.75rem;
+            background: var(--bg-deep);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            color: var(--text-secondary);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .ai-suggestion-chip:hover {
+            background: rgba(201, 255, 87, 0.1);
+            border-color: var(--accent-primary);
+            color: var(--text-primary);
+        }
+        
+        .ai-assistant-input-wrapper {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        
+        .ai-assistant-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            background: var(--bg-deep);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            font-family: 'DM Sans', sans-serif;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+        
+        .ai-assistant-input:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(201, 255, 87, 0.1);
+        }
+        
+        .ai-assistant-send {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: var(--bg-deep);
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            flex-shrink: 0;
+        }
+        
+        .ai-assistant-send:hover {
+            transform: scale(1.1);
+        }
+        
+        .ai-assistant-send:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .ai-loading {
+            display: inline-flex;
+            gap: 0.25rem;
+            align-items: center;
+        }
+        
+        .ai-loading-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        
+        .ai-loading-dot:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+        
+        .ai-loading-dot:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+        
+        @keyframes bounce {
+            0%, 80%, 100% {
+                transform: scale(0);
+            }
+            40% {
+                transform: scale(1);
+            }
+        }
+        
+        /* Recurring Event Badge */
+        .recurring-event-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            background: rgba(201, 255, 87, 0.15);
+            border: 1px solid var(--accent-primary);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: var(--accent-primary);
+            margin-left: 0.5rem;
+        }
+        
+        @media (max-width: 768px) {
+            .ai-assistant-panel {
+                width: calc(100vw - 24px);
+                height: calc(100vh - 100px);
+                bottom: 80px;
+                right: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <a href="/" class="logo">ZEITLINE</a>
+            
+            <nav class="sidebar-nav">
+                <a href="/dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    Dashboard
+                </a>
+                <a href="/timeline.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="2" x2="12" y2="22"/>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                    Timeline
+                </a>
+                <a href="/calendar.html" class="nav-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="16" y1="2" x2="16" y2="6"/>
+                        <line x1="8" y1="2" x2="8" y2="6"/>
+                        <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    Calendar
+                </a>
+                <a href="/timeline.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polygon points="10 8 16 12 10 16 10 8"/>
+                    </svg>
+                    Predictions
+                </a>
+                <a href="#" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="20" x2="18" y2="10"/>
+                        <line x1="12" y1="20" x2="12" y2="4"/>
+                        <line x1="6" y1="20" x2="6" y2="14"/>
+                    </svg>
+                    Insights
+                </a>
+                <a href="/settings.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Settings
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <button class="btn btn-ghost" style="width: 100%; justify-content: flex-start;" onclick="signOut()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    Log out
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="dashboard-header">
+                <h1>Calendar</h1>
+                <div class="user-menu">
+                    <div class="user-avatar" id="userAvatar">U</div>
+                </div>
+            </div>
+            
+            <!-- Calendar Connections Section -->
+            <div class="calendar-section" style="margin-bottom: 1.5rem;">
+                <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">🔗 Calendar Connections</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Connect your calendars to sync events across all your accounts
+                </p>
+                <div id="calendarConnections">
+                    <p style="color: var(--text-muted); font-size: 0.875rem;">Loading calendar connections...</p>
+                </div>
+            </div>
+            
+            <!-- Timezone Settings Section -->
+            <div class="calendar-section" style="margin-bottom: 1.5rem;">
+                <h2 style="font-size: 1.25rem; margin-bottom: 0.5rem;">🕐 Timezone Settings</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.875rem;">
+                    Select your timezone to correctly display imported calendar events
+                </p>
+                <div style="display: flex; align-items: center; gap: 1rem; padding: 0.75rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 12px;">
+                    <label for="timezoneSelect" style="font-weight: 500; color: var(--text-primary); min-width: 100px;">Timezone:</label>
+                    <select id="timezoneSelect" style="flex: 1; padding: 0.5rem 0.75rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.875rem; cursor: pointer;">
+                        <!-- Timezone options will be populated by JavaScript -->
+                    </select>
+                    <button id="applyTimezoneBtn" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+                        Apply
+                    </button>
+                </div>
+                <p id="timezoneStatus" style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.5rem; font-style: italic;"></p>
+            </div>
+            
+            <!-- Calendar Section -->
+            <div class="calendar-section">
+                <div class="calendar-header">
+                    <div class="calendar-header-top">
+                        <h2 class="calendar-title" id="calendarTitle">January 2025</h2>
+                        <div class="calendar-nav">
+                            <button onclick="prevMonth()">‹</button>
+                            <button onclick="nextMonth()">›</button>
+                        </div>
+                        <div class="view-toggle">
+                            <button class="active" data-view="month" onclick="setView('month', event)">Month</button>
+                            <button data-view="week" onclick="setView('week', event)">Week</button>
+                            <button data-view="day" onclick="setView('day', event)">Day</button>
+                        </div>
+                    </div>
+                    <div class="calendar-zoom-controls" id="calendarZoomControls">
+                        <button class="zoom-control-btn" id="zoomInBtn" onclick="zoomIn()">Zoom In</button>
+                        <button class="zoom-control-btn" id="zoomOutBtn" onclick="zoomOut()">Zoom Out</button>
+                    </div>
+                </div>
+                
+                <!-- Month View -->
+                <div id="monthViewContainer">
+                    <div class="calendar-weekdays">
+                        <div class="weekday">Sun</div>
+                        <div class="weekday">Mon</div>
+                        <div class="weekday">Tue</div>
+                        <div class="weekday">Wed</div>
+                        <div class="weekday">Thu</div>
+                        <div class="weekday">Fri</div>
+                        <div class="weekday">Sat</div>
+                    </div>
+                    
+                    <div class="calendar-grid" id="calendarGrid">
+                        <!-- Calendar days will be generated here -->
+                    </div>
+                </div>
+                
+                <!-- Week/Day View Container -->
+                <div id="weekDayViewContainer" style="display: none;">
+                    <div class="calendar-grid-container">
+                        <div class="calendar-time-column" id="calendarTimeColumn">
+                            <!-- Time labels will be generated here -->
+                        </div>
+                        <div class="calendar-content-wrapper">
+                            <div class="calendar-weekdays">
+                                <!-- Weekday headers will be generated dynamically -->
+                            </div>
+                            <div class="calendar-grid" id="calendarGridWeekDay">
+                                <!-- Calendar days will be generated here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    
+    <!-- Enhanced Event Detail Modal (Cal.com-inspired) -->
+    <div class="event-detail-modal" id="eventModal" onclick="closeEventModal(event)">
+        <div class="event-detail-content" onclick="event.stopPropagation()">
+            <div class="event-detail-header">
+                <button class="event-detail-close" onclick="closeEventModal()" aria-label="Close">×</button>
+            <h2 class="event-detail-title" id="eventTitle">Event Title</h2>
+                <div class="event-detail-time" id="eventTime">
+                    <svg class="event-detail-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <polyline points="12 6 12 12 16 14"/>
+                    </svg>
+                    <span id="eventTimeText">Time</span>
+                </div>
+                <div id="eventCalendarBadge"></div>
+            </div>
+            
+            <div class="event-detail-body">
+                <div class="event-detail-section" id="eventDescriptionSection">
+                    <div class="event-detail-section-title">Description</div>
+                    <div class="event-detail-section-content">
+                        <div class="event-detail-description" id="eventDescription">No description</div>
+                    </div>
+                </div>
+                
+                <div class="event-detail-section" id="eventLocationSection" style="display: none;">
+                    <div class="event-detail-section-title">Location</div>
+                    <div class="event-detail-section-content">
+                        <div class="event-detail-info-item">
+                            <svg class="event-detail-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                                <circle cx="12" cy="10" r="3"/>
+                            </svg>
+                            <div class="event-detail-info-content">
+                                <div class="event-detail-info-value" id="eventLocation">—</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="event-detail-section" id="eventDurationSection">
+                    <div class="event-detail-section-title">Duration</div>
+                    <div class="event-detail-section-content">
+                        <div class="event-detail-info-item">
+                            <svg class="event-detail-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12 6 12 12 16 14"/>
+                            </svg>
+                            <div class="event-detail-info-content">
+                                <div class="event-detail-info-value" id="eventDuration">—</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="event-detail-footer">
+            <div class="event-detail-actions">
+                    <button class="btn btn-secondary" onclick="duplicateEvent()" title="Duplicate event">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                        Duplicate
+                    </button>
+                    <button class="btn btn-primary" onclick="editEvent()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        Edit
+                    </button>
+                    <button class="btn btn-danger" onclick="deleteEvent()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- AI Assistant Chatbot (Floating) -->
+    <div class="ai-assistant-container" id="aiAssistantContainer">
+        <div class="ai-assistant-toggle" id="aiAssistantToggle" onclick="toggleAIAssistant()">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                <path d="M13 8H7"/>
+                <path d="M17 12H7"/>
+            </svg>
+            <span class="ai-assistant-badge" id="aiAssistantBadge" style="display: none;">1</span>
+        </div>
+        
+        <div class="ai-assistant-panel" id="aiAssistantPanel">
+            <div class="ai-assistant-header">
+                <div class="ai-assistant-header-content">
+                    <div class="ai-assistant-avatar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                            <path d="M2 17l10 5 10-5"/>
+                            <path d="M2 12l10 5 10-5"/>
+                        </svg>
+                    </div>
+                    <div class="ai-assistant-header-text">
+                        <h3>Zeitline AI</h3>
+                        <p class="ai-assistant-status" id="aiAssistantStatus">Online</p>
+                    </div>
+                </div>
+                <button class="ai-assistant-close" onclick="toggleAIAssistant()" aria-label="Close">×</button>
+            </div>
+            
+            <div class="ai-assistant-messages" id="aiAssistantMessages">
+                <div class="ai-message ai-message-assistant">
+                    <div class="ai-message-avatar">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                            <path d="M2 17l10 5 10-5"/>
+                            <path d="M2 12l10 5 10-5"/>
+                        </svg>
+                    </div>
+                    <div class="ai-message-content">
+                        <p>Hi! I'm your AI calendar assistant. I can help you:</p>
+                        <ul style="margin: 0.5rem 0; padding-left: 1.25rem;">
+                            <li>Create recurring events using natural language</li>
+                            <li>Suggest recurring patterns for your events</li>
+                            <li>Analyze your calendar for patterns</li>
+                            <li>Answer questions about your schedule</li>
+                        </ul>
+                        <p style="margin-top: 0.5rem;">Try saying: "Create a meeting every Monday at 9am" or "Make this event repeat weekly"</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="ai-assistant-input-container">
+                <div class="ai-assistant-suggestions" id="aiAssistantSuggestions">
+                    <button class="ai-suggestion-chip" onclick="sendAIMessage('Create a recurring event every Monday at 9am')">
+                        Every Monday at 9am
+                    </button>
+                    <button class="ai-suggestion-chip" onclick="sendAIMessage('Schedule a daily workout')">
+                        Daily workout
+                    </button>
+                    <button class="ai-suggestion-chip" onclick="sendAIMessage('Analyze my calendar for recurring patterns')">
+                        Analyze patterns
+                    </button>
+                </div>
+                <div class="ai-assistant-input-wrapper">
+                    <input 
+                        type="text" 
+                        id="aiAssistantInput" 
+                        class="ai-assistant-input" 
+                        placeholder="Ask me anything about recurring events..."
+                        onkeypress="handleAIAssistantKeyPress(event)"
+                    />
+                    <button class="ai-assistant-send" onclick="sendAIMessage()" id="aiAssistantSendBtn">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="22" y1="2" x2="11" y2="13"/>
+                            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/js/firebase-config.js?v=2.1"></script>
+    <script src="/js/calendar.js?v=4.7"></script>
+</body>
+</html>
+

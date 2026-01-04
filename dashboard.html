@@ -163,30 +163,10 @@
             font-size: 0.9rem;
         }
         
-        .mobile-header {
-            display: none;
-            padding: 1rem;
-            background: var(--bg-elevated);
-            border-bottom: 1px solid var(--border-subtle);
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        @media (max-width: 768px) {
-            .mobile-header {
-                display: flex;
-            }
-        }
     </style>
 </head>
 <body>
     <div class="dashboard">
-        <!-- Mobile Header -->
-        <div class="mobile-header">
-            <a href="/" class="logo">ZEITLINE</a>
-            <button class="btn btn-ghost" onclick="signOut()">Log out</button>
-        </div>
-        
         <!-- Sidebar -->
         <aside class="sidebar">
             <a href="/" class="logo">ZEITLINE</a>
@@ -208,7 +188,7 @@
                     </svg>
                     Timeline
                 </a>
-                <a href="/timeline.html" class="nav-item">
+                <a href="/calendar.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
                         <line x1="16" y1="2" x2="16" y2="6"/>

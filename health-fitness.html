@@ -534,21 +534,7 @@
             color: var(--text-muted);
         }
         
-        /* Mobile Header */
-        .mobile-header {
-            display: none;
-            padding: 1rem;
-            background: var(--bg-elevated);
-            border-bottom: 1px solid var(--border-subtle);
-            justify-content: space-between;
-            align-items: center;
-        }
-        
         @media (max-width: 768px) {
-            .mobile-header {
-                display: flex;
-            }
-            
             .activity-rings-content {
                 flex-direction: column;
             }
@@ -571,12 +557,6 @@
 </head>
 <body>
     <div class="dashboard">
-        <!-- Mobile Header -->
-        <div class="mobile-header">
-            <a href="/" class="logo">ZEITLINE</a>
-            <button class="btn btn-ghost" onclick="signOut()">Log out</button>
-        </div>
-        
         <!-- Sidebar -->
         <aside class="sidebar">
             <a href="/" class="logo">ZEITLINE</a>

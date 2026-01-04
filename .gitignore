@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+functions/node_modules/
+
+# Environment variables
+.env
+.env.local
+functions/.env
+
+# Google OAuth credentials (contains secrets)
+functions/google-credentials.json
+**/google-credentials.json
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+
+# Build outputs
+functions/lib/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test files
+test-login.html
+create-test-user.js
+js/test-account.js
+
+# Temporary files
+*.tmp
+*.log

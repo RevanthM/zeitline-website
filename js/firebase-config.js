@@ -27,7 +27,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
 // API base URL - change for production
 const API_BASE_URL =
   window.location.hostname === "localhost"
-    ? "http://localhost:5001/zeitlineai/us-central1/api"
+    ? "http://localhost:9000/zeitlineai/us-central1/api"
     : "/api";
 
 // Auth state observer

@@ -1,25 +1,123 @@
+// Load environment variables from .env file (for local development)
+if (process.env.NODE_ENV !== "production") {
+  try {
+    require("dotenv").config();
+  } catch (e) {
+    // dotenv not available, continue without it
+  }
+}
+
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
 
 // Initialize Firebase Admin
-admin.initializeApp();
+// Check if we're running in the emulator
+const isEmulator = process.env.FUNCTIONS_EMULATOR === "true" || 
+                   process.env.FIREBASE_AUTH_EMULATOR_HOST !== undefined ||
+                   process.env.FIRESTORE_EMULATOR_HOST !== undefined;
+
+if (isEmulator) {
+  console.log("Initializing Firebase Admin SDK for emulator");
+  
+  // Set Firestore emulator host if not set
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    process.env.FIRESTORE_EMULATOR_HOST = "localhost:8080";
+  }
+  
+  // Initialize Admin SDK with explicit credentials for production token verification
+  if (!admin.apps.length) {
+    const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || "zeitlineai";
+    let credential = null;
+    
+    // Try to use service account key file first (most reliable)
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      try {
+        credential = admin.credential.cert(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+        console.log("✅ Using service account key from GOOGLE_APPLICATION_CREDENTIALS");
+      } catch (e: any) {
+        console.warn("⚠️ Could not load service account key:", e.message);
+      }
+    }
+    
+    // Fallback to application default credentials
+    if (!credential) {
+      try {
+        credential = admin.credential.applicationDefault();
+        console.log("✅ Using application default credentials");
+      } catch (credError: any) {
+        console.warn("⚠️ Could not load application default credentials:", credError.message);
+      }
+    }
+    
+    // Initialize with credentials if available
+    if (credential) {
+      admin.initializeApp({
+        projectId: projectId,
+        credential: credential,
+      });
+      console.log("✅ Admin SDK initialized with credentials for project:", projectId);
+    } else {
+      // Last resort: initialize without credentials (won't work for production tokens)
+      console.warn("⚠️ Initializing Admin SDK without credentials - token verification will fail");
+      admin.initializeApp({
+        projectId: projectId,
+      });
+    }
+    
+    // Configure Firestore to use emulator
+    const db = admin.firestore();
+    db.settings({
+      host: process.env.FIRESTORE_EMULATOR_HOST || "localhost:8080",
+      ssl: false,
+    });
+    console.log("✅ Firestore configured for emulator");
+  }
+} else {
+  // Production initialization
+  if (!admin.apps.length) {
+    admin.initializeApp();
+  }
+}
 
 // Import routes
 import usersRouter from "./users";
 import stripeRouter from "./stripe";
+import calendarsRouter from "./calendars";
+import aiAssistantRouter from "./ai-assistant";
 
 // Create Express app
 const app = express();
 
-// Middleware
+// Middleware - CORS must be first to handle preflight and errors
 app.use(
   cors({
-    origin: true,
+    origin: [
+      'http://localhost:5500',
+      'http://127.0.0.1:5500',
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      /\.firebaseapp\.com$/,
+      /\.web\.app$/
+    ],
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Content-Type'],
   })
 );
+
+// Handle preflight requests explicitly
+app.options('*', cors(), (req: Request, res: Response) => {
+  res.sendStatus(200);
+});
+
+// Request logging middleware (for debugging)
+app.use((req: Request, res: Response, next) => {
+  console.log(`${req.method} ${req.path}`);
+  next();
+});
 
 // Parse JSON for all routes except Stripe webhook
 app.use((req: Request, res: Response, next) => {
@@ -43,9 +141,24 @@ app.get("/health", (req: Request, res: Response) => {
 // Mount routes
 app.use("/users", usersRouter);
 app.use("/stripe", stripeRouter);
+app.use("/calendars", calendarsRouter);
+app.use("/ai-assistant", aiAssistantRouter);
+
+// Error handling middleware - must be before 404 handler
+// Note: Express error handlers must have 4 parameters
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error("Unhandled error:", err);
+  // Ensure CORS headers are set even on errors
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || "Internal server error",
+    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+  });
+});
 
 // 404 handler
 app.use((req: Request, res: Response) => {
+  console.log(`404: ${req.method} ${req.path}`);
   res.status(404).json({
     success: false,
     error: "Not found",
