@@ -60,6 +60,7 @@ const questionFlows = {
                 message: "What do you do for work? Or if you're a student, retired, or between things – that counts too! I'm curious about how you spend your days.",
                 field: 'occupation',
                 type: 'text',
+                parse: (v) => extractOccupation(v),
                 response: (v) => {
                     const lower = v.toLowerCase();
                     if (lower.includes('engineer') || lower.includes('developer') || lower.includes('programmer')) {
@@ -77,7 +78,23 @@ const questionFlows = {
                     if (lower.includes('retire')) {
                         return "Congratulations on reaching that milestone! What are you enjoying most about this chapter?";
                     }
-                    return `Interesting! Being a ${v} sounds like it has its own unique challenges and rewards. What do you enjoy most about it?`;
+                    if (lower.includes('designer')) {
+                        return "A designer! Creative work that shapes how people interact with the world. I love that. What kind of design do you focus on?";
+                    }
+                    if (lower.includes('manager') || lower.includes('director') || lower.includes('lead')) {
+                        return "Leadership role! Guiding teams and making things happen. What's the most rewarding part of leading others?";
+                    }
+                    if (lower.includes('writer') || lower.includes('content') || lower.includes('journalist')) {
+                        return "A wordsmith! Communication is such a powerful skill. What kind of writing do you do?";
+                    }
+                    if (lower.includes('sales') || lower.includes('business development')) {
+                        return "Sales and relationship building – that takes real people skills. What industry are you in?";
+                    }
+                    if (lower.includes('entrepreneur') || lower.includes('founder') || lower.includes('own business')) {
+                        return "An entrepreneur! That takes real courage and vision. What does your business do?";
+                    }
+                    // v is already the parsed occupation (extracted from the parse function)
+                    return `Interesting! ${v} sounds like it has its own unique challenges and rewards. What do you enjoy most about it?`;
                 }
             },
             {
@@ -976,6 +993,11 @@ function processResponse(value, question) {
         }
     }
     
+    // Apply custom parse function if defined
+    if (question.parse && typeof question.parse === 'function') {
+        processedValue = question.parse(value);
+    }
+    
     // Validate if needed
     if (question.validate && !question.validate(processedValue)) {
         showTypingIndicator();
@@ -1286,6 +1308,21 @@ function parseDate(text) {
         return date;
     }
     return null;
+}
+
+function extractOccupation(text) {
+    // Remove common prefixes like "I'm a", "I am a", "I work as a", etc.
+    let occupation = text
+        .replace(/^(i'm a|i am a|i'm an|i am an|i work as a|i work as an|i'm|i am)\s+/i, '')
+        .replace(/^(a|an)\s+/i, '')
+        .trim();
+    
+    // Capitalize first letter
+    if (occupation.length > 0) {
+        occupation = occupation.charAt(0).toUpperCase() + occupation.slice(1);
+    }
+    
+    return occupation;
 }
 
 function calculateAge(birthDate) {
