@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nutrition & Fitness – Zeitline</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        /* Nutrition Page Styles */
+        .nutrition-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        
+        .date-nav {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            background: var(--bg-card);
+            padding: 0.75rem 1.25rem;
+            border-radius: 100px;
+            border: 1px solid var(--border-subtle);
+        }
+        
+        .date-nav button {
+            background: none;
+            border: none;
+            color: var(--accent-primary);
+            font-size: 1.25rem;
+            cursor: pointer;
+            padding: 0.25rem;
+        }
+        
+        .date-nav button:disabled {
+            color: var(--text-muted);
+            cursor: not-allowed;
+        }
+        
+        .date-nav span {
+            font-weight: 500;
+            min-width: 120px;
+            text-align: center;
+        }
+        
+        .tab-nav {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 2rem;
+            background: var(--bg-card);
+            padding: 0.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-subtle);
+        }
+        
+        .tab-btn {
+            flex: 1;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            background: transparent;
+            color: var(--text-secondary);
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 500;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .tab-btn:hover {
+            color: var(--text-primary);
+        }
+        
+        .tab-btn.active {
+            background: var(--accent-primary);
+            color: var(--bg-deep);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        /* Summary Card */
+        .summary-card {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 2rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .calorie-ring {
+            position: relative;
+            width: 160px;
+            height: 160px;
+        }
+        
+        .calorie-ring svg {
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+        
+        .calorie-ring .bg {
+            fill: none;
+            stroke: var(--border-subtle);
+            stroke-width: 12;
+        }
+        
+        .calorie-ring .progress {
+            fill: none;
+            stroke: url(#calorieGradient);
+            stroke-width: 12;
+            stroke-linecap: round;
+            stroke-dasharray: 377;
+            stroke-dashoffset: 377;
+            transition: stroke-dashoffset 1s ease;
+        }
+        
+        .calorie-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        
+        .calorie-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+        }
+        
+        .calorie-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        
+        .macro-bars {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 1rem;
+        }
+        
+        .macro-bar {
+            display: grid;
+            grid-template-columns: 80px 1fr 60px;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .macro-label {
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .macro-label .dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+        
+        .macro-label .dot.protein { background: var(--accent-secondary); }
+        .macro-label .dot.carbs { background: #5b8def; }
+        .macro-label .dot.fat { background: #a855f7; }
+        
+        .macro-track {
+            height: 10px;
+            background: var(--bg-elevated);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        
+        .macro-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.8s ease;
+        }
+        
+        .macro-fill.protein { background: var(--accent-secondary); }
+        .macro-fill.carbs { background: #5b8def; }
+        .macro-fill.fat { background: #a855f7; }
+        
+        .macro-value {
+            text-align: right;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        /* Meal Section */
+        .meal-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+        }
+        
+        .meal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .meal-title {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 600;
+        }
+        
+        .meal-icon {
+            font-size: 1.25rem;
+        }
+        
+        .meal-calories {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        
+        .add-food-btn {
+            background: rgba(201, 255, 87, 0.1);
+            border: 1px solid var(--accent-primary);
+            color: var(--accent-primary);
+            padding: 0.5rem 1rem;
+            border-radius: 100px;
+            font-size: 0.85rem;
+            font-family: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .add-food-btn:hover {
+            background: rgba(201, 255, 87, 0.2);
+        }
+        
+        .food-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+        
+        .food-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem;
+            background: var(--bg-elevated);
+            border-radius: 12px;
+            transition: background 0.2s;
+        }
+        
+        .food-item:hover {
+            background: var(--bg-deep);
+        }
+        
+        .food-thumb {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            background: var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+        }
+        
+        .food-info {
+            flex: 1;
+        }
+        
+        .food-name {
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+        
+        .food-serving {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        
+        .food-calories {
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        
+        .food-delete {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.5rem;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .food-item:hover .food-delete {
+            opacity: 1;
+        }
+        
+        .food-delete:hover {
+            color: var(--error);
+        }
+        
+        .empty-meal {
+            text-align: center;
+            padding: 1.5rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        
+        /* Add Food Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 24px;
+            width: 90%;
+            max-width: 500px;
+            max-height: 90vh;
+            overflow-y: auto;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+        }
+        
+        .modal-overlay.active .modal {
+            transform: scale(1);
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        
+        .modal-header h3 {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+        
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 1.5rem;
+            cursor: pointer;
+        }
+        
+        .modal-body {
+            padding: 1.5rem;
+        }
+        
+        .add-options {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        
+        .add-option {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .add-option:hover {
+            border-color: var(--accent-primary);
+            background: rgba(201, 255, 87, 0.05);
+        }
+        
+        .add-option-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: rgba(201, 255, 87, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        
+        .add-option-text h4 {
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .add-option-text p {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        
+        /* Scanner */
+        #scanner-container {
+            width: 100%;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+        
+        #reader {
+            width: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        
+        /* Search Results */
+        .search-results {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 1rem;
+        }
+        
+        .search-result {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .search-result:hover {
+            background: var(--bg-elevated);
+        }
+        
+        .search-result-img {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            object-fit: cover;
+            background: var(--border-subtle);
+        }
+        
+        .search-result-info {
+            flex: 1;
+        }
+        
+        .search-result-name {
+            font-weight: 500;
+        }
+        
+        .search-result-brand {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        
+        .search-result-cals {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        /* Mobile Header */
+        .mobile-header {
+            display: none;
+            padding: 1rem;
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-subtle);
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        @media (max-width: 768px) {
+            .mobile-header {
+                display: flex;
+            }
+            
+            .summary-card {
+                grid-template-columns: 1fr;
+                text-align: center;
+            }
+            
+            .calorie-ring {
+                margin: 0 auto;
+            }
+            
+            .macro-bar {
+                grid-template-columns: 60px 1fr 50px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Mobile Header -->
+        <div class="mobile-header">
+            <a href="/" class="logo">ZEITLINE</a>
+            <button class="btn btn-ghost" onclick="signOut()">Log out</button>
+        </div>
+        
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <a href="/" class="logo">ZEITLINE</a>
+            
+            <nav class="sidebar-nav">
+                <a href="/dashboard.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"/>
+                        <rect x="14" y="3" width="7" height="7"/>
+                        <rect x="14" y="14" width="7" height="7"/>
+                        <rect x="3" y="14" width="7" height="7"/>
+                    </svg>
+                    Dashboard
+                </a>
+                <a href="/timeline.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="2" x2="12" y2="22"/>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+                    </svg>
+                    Timeline
+                </a>
+                <a href="/nutrition.html" class="nav-item active">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 8h1a4 4 0 0 1 0 8h-1"/>
+                        <path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/>
+                        <line x1="6" y1="1" x2="6" y2="4"/>
+                        <line x1="10" y1="1" x2="10" y2="4"/>
+                        <line x1="14" y1="1" x2="14" y2="4"/>
+                    </svg>
+                    Nutrition
+                </a>
+                <a href="/health.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                    Health
+                </a>
+                <a href="/settings.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Settings
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <button class="btn btn-ghost" style="width: 100%; justify-content: flex-start;" onclick="signOut()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                        <polyline points="16 17 21 12 16 7"/>
+                        <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    Log out
+                </button>
+            </div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="nutrition-header">
+                <h1>Nutrition & Fitness</h1>
+                <div class="date-nav">
+                    <button id="prevDay">←</button>
+                    <span id="currentDate">Today</span>
+                    <button id="nextDay" disabled>→</button>
+                </div>
+            </div>
+            
+            <!-- Tab Navigation -->
+            <div class="tab-nav">
+                <button class="tab-btn active" data-tab="food">🍽️ Food</button>
+                <button class="tab-btn" data-tab="exercise">🏋️ Exercise</button>
+            </div>
+            
+            <!-- Food Tab -->
+            <div id="food-tab" class="tab-content active">
+                <!-- Summary Card -->
+                <div class="summary-card">
+                    <div class="calorie-ring">
+                        <svg viewBox="0 0 120 120">
+                            <defs>
+                                <linearGradient id="calorieGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="var(--accent-primary)"/>
+                                    <stop offset="100%" stop-color="var(--accent-secondary)"/>
+                                </linearGradient>
+                            </defs>
+                            <circle class="bg" cx="60" cy="60" r="50"/>
+                            <circle class="progress" id="calorieProgress" cx="60" cy="60" r="50"/>
+                        </svg>
+                        <div class="calorie-center">
+                            <div class="calorie-value" id="caloriesEaten">0</div>
+                            <div class="calorie-label">/ <span id="calorieGoal">2000</span> cal</div>
+                        </div>
+                    </div>
+                    
+                    <div class="macro-bars">
+                        <div class="macro-bar">
+                            <div class="macro-label">
+                                <span class="dot protein"></span>
+                                Protein
+                            </div>
+                            <div class="macro-track">
+                                <div class="macro-fill protein" id="proteinBar" style="width: 0%"></div>
+                            </div>
+                            <div class="macro-value"><span id="proteinValue">0</span>/<span id="proteinGoal">50</span>g</div>
+                        </div>
+                        
+                        <div class="macro-bar">
+                            <div class="macro-label">
+                                <span class="dot carbs"></span>
+                                Carbs
+                            </div>
+                            <div class="macro-track">
+                                <div class="macro-fill carbs" id="carbsBar" style="width: 0%"></div>
+                            </div>
+                            <div class="macro-value"><span id="carbsValue">0</span>/<span id="carbsGoal">250</span>g</div>
+                        </div>
+                        
+                        <div class="macro-bar">
+                            <div class="macro-label">
+                                <span class="dot fat"></span>
+                                Fat
+                            </div>
+                            <div class="macro-track">
+                                <div class="macro-fill fat" id="fatBar" style="width: 0%"></div>
+                            </div>
+                            <div class="macro-value"><span id="fatValue">0</span>/<span id="fatGoal">65</span>g</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Meal Sections -->
+                <div id="mealSections">
+                    <!-- Breakfast -->
+                    <div class="meal-section" data-meal="breakfast">
+                        <div class="meal-header">
+                            <div class="meal-title">
+                                <span class="meal-icon">🌅</span>
+                                <span>Breakfast</span>
+                                <span class="meal-calories" id="breakfast-cals">0 cal</span>
+                            </div>
+                            <button class="add-food-btn" onclick="openAddFood('breakfast')">
+                                <span>+</span> Add Food
+                            </button>
+                        </div>
+                        <div class="food-list" id="breakfast-foods">
+                            <div class="empty-meal">No food logged yet</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Lunch -->
+                    <div class="meal-section" data-meal="lunch">
+                        <div class="meal-header">
+                            <div class="meal-title">
+                                <span class="meal-icon">☀️</span>
+                                <span>Lunch</span>
+                                <span class="meal-calories" id="lunch-cals">0 cal</span>
+                            </div>
+                            <button class="add-food-btn" onclick="openAddFood('lunch')">
+                                <span>+</span> Add Food
+                            </button>
+                        </div>
+                        <div class="food-list" id="lunch-foods">
+                            <div class="empty-meal">No food logged yet</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Dinner -->
+                    <div class="meal-section" data-meal="dinner">
+                        <div class="meal-header">
+                            <div class="meal-title">
+                                <span class="meal-icon">🌙</span>
+                                <span>Dinner</span>
+                                <span class="meal-calories" id="dinner-cals">0 cal</span>
+                            </div>
+                            <button class="add-food-btn" onclick="openAddFood('dinner')">
+                                <span>+</span> Add Food
+                            </button>
+                        </div>
+                        <div class="food-list" id="dinner-foods">
+                            <div class="empty-meal">No food logged yet</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Snacks -->
+                    <div class="meal-section" data-meal="snack">
+                        <div class="meal-header">
+                            <div class="meal-title">
+                                <span class="meal-icon">🥕</span>
+                                <span>Snacks</span>
+                                <span class="meal-calories" id="snack-cals">0 cal</span>
+                            </div>
+                            <button class="add-food-btn" onclick="openAddFood('snack')">
+                                <span>+</span> Add Food
+                            </button>
+                        </div>
+                        <div class="food-list" id="snack-foods">
+                            <div class="empty-meal">No food logged yet</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Exercise Tab -->
+            <div id="exercise-tab" class="tab-content">
+                <!-- Exercise summary and log will be loaded here -->
+                <div class="summary-card">
+                    <div class="calorie-ring">
+                        <svg viewBox="0 0 120 120">
+                            <defs>
+                                <linearGradient id="exerciseGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#f97316"/>
+                                    <stop offset="100%" stop-color="#ef4444"/>
+                                </linearGradient>
+                            </defs>
+                            <circle class="bg" cx="60" cy="60" r="50"/>
+                            <circle class="progress" id="exerciseProgress" cx="60" cy="60" r="50" style="stroke: url(#exerciseGradient)"/>
+                        </svg>
+                        <div class="calorie-center">
+                            <div class="calorie-value" id="caloriesBurned">0</div>
+                            <div class="calorie-label">calories burned</div>
+                        </div>
+                    </div>
+                    
+                    <div class="macro-bars" style="gap: 1.5rem;">
+                        <div style="display: flex; gap: 2rem;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 1.75rem; font-weight: 700;" id="exerciseDuration">0</div>
+                                <div style="font-size: 0.85rem; color: var(--text-muted);">minutes</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 1.75rem; font-weight: 700;" id="exerciseCount">0</div>
+                                <div style="font-size: 0.85rem; color: var(--text-muted);">workouts</div>
+                            </div>
+                        </div>
+                        <button class="btn btn-primary" onclick="openAddExercise()" style="margin-top: 1rem;">
+                            + Log Exercise
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="meal-section">
+                    <div class="meal-header">
+                        <div class="meal-title">
+                            <span class="meal-icon">🏃</span>
+                            <span>Today's Workouts</span>
+                        </div>
+                    </div>
+                    <div class="food-list" id="exercise-list">
+                        <div class="empty-meal">No exercises logged yet</div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Add Food Modal -->
+    <div class="modal-overlay" id="addFoodModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 id="addFoodTitle">Add Food</h3>
+                <button class="modal-close" onclick="closeModal('addFoodModal')">×</button>
+            </div>
+            <div class="modal-body">
+                <div class="add-options" id="addOptions">
+                    <div class="add-option" onclick="startBarcodeScanner()">
+                        <div class="add-option-icon">📷</div>
+                        <div class="add-option-text">
+                            <h4>Scan Barcode</h4>
+                            <p>Quick lookup from OpenFoodFacts</p>
+                        </div>
+                    </div>
+                    <div class="add-option" onclick="showNutritionScanner()">
+                        <div class="add-option-icon">🏷️</div>
+                        <div class="add-option-text">
+                            <h4>Scan Nutrition Label</h4>
+                            <p>AI-powered label reading</p>
+                        </div>
+                    </div>
+                    <div class="add-option" onclick="showFoodSearch()">
+                        <div class="add-option-icon">🔍</div>
+                        <div class="add-option-text">
+                            <h4>Search Foods</h4>
+                            <p>Search OpenFoodFacts database</p>
+                        </div>
+                    </div>
+                    <div class="add-option" onclick="showManualEntry()">
+                        <div class="add-option-icon">✏️</div>
+                        <div class="add-option-text">
+                            <h4>Manual Entry</h4>
+                            <p>Enter nutrition manually</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Scanner Container -->
+                <div id="scanner-view" style="display: none;">
+                    <div id="scanner-container">
+                        <div id="reader"></div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="stopScanner()" style="width: 100%; margin-top: 1rem;">Cancel</button>
+                </div>
+                
+                <!-- Search View -->
+                <div id="search-view" style="display: none;">
+                    <input type="text" class="form-input" id="foodSearchInput" placeholder="Search foods..." oninput="searchFoods(this.value)">
+                    <div class="search-results" id="searchResults"></div>
+                    <button class="btn btn-secondary" onclick="showAddOptions()" style="width: 100%; margin-top: 1rem;">Back</button>
+                </div>
+                
+                <!-- Manual Entry View -->
+                <div id="manual-view" style="display: none;">
+                    <div class="form-group">
+                        <label class="form-label">Food Name *</label>
+                        <input type="text" class="form-input" id="manualName" placeholder="e.g., Chicken Breast">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Calories *</label>
+                            <input type="number" class="form-input" id="manualCalories" placeholder="0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Serving Size</label>
+                            <input type="text" class="form-input" id="manualServing" placeholder="100g">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Protein (g)</label>
+                            <input type="number" class="form-input" id="manualProtein" placeholder="0">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Carbs (g)</label>
+                            <input type="number" class="form-input" id="manualCarbs" placeholder="0">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Fat (g)</label>
+                            <input type="number" class="form-input" id="manualFat" placeholder="0">
+                        </div>
+                        <div class="form-group"></div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-secondary" onclick="showAddOptions()">Back</button>
+                        <button class="btn btn-primary" onclick="addManualFood()">Add Food</button>
+                    </div>
+                </div>
+                
+                <!-- Nutrition Scanner View -->
+                <div id="nutrition-scanner-view" style="display: none;">
+                    <div style="text-align: center; margin-bottom: 1rem;">
+                        <p style="color: var(--text-secondary); margin-bottom: 1rem;">Upload or take a photo of a nutrition label</p>
+                        <input type="file" id="nutritionImageInput" accept="image/*" capture="camera" style="display: none;" onchange="processNutritionImage(this)">
+                        <button class="btn btn-primary" onclick="document.getElementById('nutritionImageInput').click()">
+                            📷 Take Photo / Upload
+                        </button>
+                    </div>
+                    <div id="nutritionPreview" style="display: none; margin-top: 1rem;">
+                        <img id="nutritionImage" style="max-width: 100%; border-radius: 12px; margin-bottom: 1rem;">
+                        <div id="nutritionLoading" style="text-align: center; display: none;">
+                            <div class="loading-spinner"></div>
+                            <p style="margin-top: 1rem; color: var(--text-secondary);">Analyzing with AI...</p>
+                        </div>
+                        <div id="nutritionResults" style="display: none;"></div>
+                    </div>
+                    <button class="btn btn-secondary" onclick="showAddOptions()" style="width: 100%; margin-top: 1rem;">Back</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="/js/firebase-config.js"></script>
+    <script src="/js/nutrition-manager.js"></script>
+</body>
+</html>
+

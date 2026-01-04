@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Me – Zeitline</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        .about-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        .about-header {
+            text-align: center;
+            margin-bottom: 3rem;
+        }
+        
+        .about-header h1 {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .about-header .subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+        
+        .profile-hero {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 24px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .profile-avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            font-family: 'Instrument Serif', Georgia, serif;
+            color: var(--bg-primary);
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        
+        .profile-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .profile-info h2 {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .profile-info .tagline {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .profile-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+        
+        .life-summary {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .life-summary h3 {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .life-narrative {
+            font-size: 1.1rem;
+            line-height: 1.8;
+            color: var(--text-secondary);
+        }
+        
+        .life-narrative strong {
+            color: var(--text-primary);
+        }
+        
+        .life-narrative .highlight {
+            color: var(--accent-primary);
+            font-weight: 500;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .stat-card .icon {
+            font-size: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .stat-card .value {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 1.75rem;
+            color: var(--text-primary);
+        }
+        
+        .stat-card .label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+        
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .info-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+        
+        .info-card h4 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+        
+        .tag {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 100px;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .tag.primary {
+            background: rgba(201, 255, 87, 0.15);
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+        
+        .tag.secondary {
+            background: rgba(87, 255, 212, 0.15);
+            border-color: var(--accent-secondary);
+            color: var(--accent-secondary);
+        }
+        
+        .export-section {
+            background: linear-gradient(135deg, rgba(201, 255, 87, 0.05), rgba(87, 255, 212, 0.05));
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .export-section h3 {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .export-section p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+        }
+        
+        .export-buttons {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .json-preview {
+            background: var(--bg-deep);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-top: 1.5rem;
+            max-height: 400px;
+            overflow: auto;
+            display: none;
+        }
+        
+        .json-preview.visible {
+            display: block;
+        }
+        
+        .json-preview pre {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        
+        .json-preview .key {
+            color: var(--accent-secondary);
+        }
+        
+        .json-preview .string {
+            color: var(--accent-primary);
+        }
+        
+        .json-preview .number {
+            color: var(--accent-tertiary);
+        }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-bottom: 1.5rem;
+            transition: color 0.2s;
+        }
+        
+        .back-link:hover {
+            color: var(--text-primary);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-muted);
+        }
+        
+        .empty-state h2 {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+        
+        @media (max-width: 640px) {
+            .profile-hero {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .profile-meta {
+                justify-content: center;
+            }
+            
+            .about-header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="about-container">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <a href="/dashboard.html" class="back-link">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5M12 19l-7-7 7-7"/>
+                </svg>
+                Back to Dashboard
+            </a>
+            <button class="btn btn-ghost" onclick="signOut()" style="color: var(--accent-tertiary);">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                Log out
+            </button>
+        </div>
+        
+        <div class="about-header">
+            <h1>About Me</h1>
+            <p class="subtitle">Your life, summarized</p>
+        </div>
+        
+        <div id="profileContent">
+            <!-- Will be populated by JavaScript -->
+            <div class="empty-state">
+                <div class="loading-spinner"></div>
+                <p style="margin-top: 1rem;">Loading your profile...</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="/js/firebase-config.js"></script>
+    <script>
+        let userProfile = null;
+        
+        function loadAboutMe(profile, firebaseUser = null) {
+            userProfile = profile;
+            const container = document.getElementById('profileContent');
+            
+            // Check if we have profile data
+            if (!profile || !profile.personal || !profile.personal.fullName) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h2>Complete Your Profile</h2>
+                        <p>Tell us about yourself to see your life summary.</p>
+                        <a href="/onboarding.html" class="btn btn-primary" style="margin-top: 1rem;">Get Started</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            const personal = profile.personal || {};
+            const lifestyle = profile.lifestyle || {};
+            const financial = profile.financial || {};
+            
+            // Get photo URL from profile or Firebase user
+            const photoURL = personal.photoURL || (firebaseUser?.photoURL);
+            const email = personal.email || (firebaseUser?.email) || '';
+            
+            // Calculate some derived stats
+            const yearsToRetirement = 65 - (personal.age || 30);
+            const monthlySavings = (financial.salary || 0) / 12 * ((financial.savingsRate || 0) / 100);
+            const annualSavings = monthlySavings * 12;
+            
+            // Build the life narrative
+            const narrative = buildLifeNarrative(personal, lifestyle, financial);
+            
+            // Currency symbol
+            const currencySymbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$', INR: '₹', JPY: '¥' };
+            const currencySymbol = currencySymbols[financial.currency] || '$';
+            
+            container.innerHTML = `
+                <!-- Profile Hero -->
+                <div class="profile-hero">
+                    <div class="profile-avatar" id="profileAvatar">
+                        ${photoURL 
+                            ? `<img src="${photoURL}" alt="${personal.fullName}">` 
+                            : (personal.fullName?.charAt(0) || 'U')}
+                    </div>
+                    <div class="profile-info">
+                        <h2>${personal.fullName || 'User'}</h2>
+                        <p class="tagline">${personal.occupation || 'Living life'} ${personal.age ? `• ${personal.age} years young` : ''}</p>
+                        <div class="profile-meta">
+                            <span class="meta-item">📍 ${personal.city || 'Unknown'}, ${personal.state || ''}</span>
+                            <span class="meta-item">🌐 ${personal.timezone?.replace(/_/g, ' ') || 'Unknown timezone'}</span>
+                            ${lifestyle.morningPerson !== undefined ? `<span class="meta-item">${lifestyle.morningPerson ? '☀️ Early Bird' : '🌙 Night Owl'}</span>` : ''}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Life Narrative -->
+                <div class="life-summary">
+                    <h3>📖 Your Story</h3>
+                    <p class="life-narrative">${narrative}</p>
+                </div>
+                
+                <!-- Quick Stats -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="icon">💰</div>
+                        <div class="value">${currencySymbol}${formatNumber(financial.salary || 0)}</div>
+                        <div class="label">Annual Income</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon">📈</div>
+                        <div class="value">${currencySymbol}${formatNumber(financial.netWorth || 0)}</div>
+                        <div class="label">Net Worth</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon">🏦</div>
+                        <div class="value">${financial.savingsRate || 0}%</div>
+                        <div class="label">Savings Rate</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="icon">😴</div>
+                        <div class="value">${lifestyle.sleepHours || 8}h</div>
+                        <div class="label">Avg Sleep</div>
+                    </div>
+                </div>
+                
+                <!-- Details Grid -->
+                <div class="section-grid">
+                    <!-- Interests -->
+                    <div class="info-card">
+                        <h4>🎯 Interests</h4>
+                        <div class="tags-container">
+                            ${(lifestyle.interests || []).length > 0 
+                                ? lifestyle.interests.map(i => `<span class="tag">${i}</span>`).join('')
+                                : '<span class="tag">None specified</span>'}
+                        </div>
+                    </div>
+                    
+                    <!-- Life Goals -->
+                    <div class="info-card">
+                        <h4>🚀 Life Goals</h4>
+                        <div class="tags-container">
+                            ${(lifestyle.lifeGoals || []).length > 0 
+                                ? lifestyle.lifeGoals.map(g => `<span class="tag primary">${g}</span>`).join('')
+                                : '<span class="tag">None specified</span>'}
+                        </div>
+                    </div>
+                    
+                    <!-- Financial Goals -->
+                    <div class="info-card">
+                        <h4>💎 Financial Goals</h4>
+                        <div class="tags-container">
+                            ${(financial.financialGoals || []).length > 0 
+                                ? financial.financialGoals.map(g => `<span class="tag secondary">${g}</span>`).join('')
+                                : '<span class="tag">None specified</span>'}
+                        </div>
+                    </div>
+                    
+                    <!-- Spending Categories -->
+                    <div class="info-card">
+                        <h4>💳 Top Spending</h4>
+                        <div class="tags-container">
+                            ${(financial.spendingCategories || []).length > 0 
+                                ? financial.spendingCategories.map(c => `<span class="tag">${c}</span>`).join('')
+                                : '<span class="tag">None specified</span>'}
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Export Section -->
+                <div class="export-section">
+                    <h3>📦 Export Your Life Data</h3>
+                    <p>Download your complete profile as a JSON file. This includes all your personal information, lifestyle preferences, and financial data.</p>
+                    
+                    <div class="export-buttons">
+                        <button class="btn btn-primary" onclick="downloadJSON()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Download JSON
+                        </button>
+                        <button class="btn btn-secondary" onclick="toggleJSONPreview()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                                <circle cx="12" cy="12" r="3"/>
+                            </svg>
+                            Preview JSON
+                        </button>
+                        <button class="btn btn-ghost" onclick="copyJSON()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                            </svg>
+                            Copy to Clipboard
+                        </button>
+                    </div>
+                    
+                    <div class="json-preview" id="jsonPreview">
+                        <pre id="jsonContent"></pre>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function buildLifeNarrative(personal, lifestyle, financial) {
+            const name = personal.fullName?.split(' ')[0] || 'You';
+            const age = personal.age || 'unknown age';
+            const occupation = personal.occupation || 'professional';
+            const city = personal.city || 'your city';
+            const state = personal.state || '';
+            
+            const workStyleMap = {
+                'remote': 'working remotely',
+                'office': 'working in an office',
+                'hybrid': 'balancing hybrid work',
+                'freelance': 'freelancing',
+                'student': 'studying',
+                'retired': 'enjoying retirement'
+            };
+            const workStyle = workStyleMap[lifestyle.workStyle] || 'working hard';
+            
+            const schedule = lifestyle.morningPerson ? 'an early riser who starts the day with energy' : 'a night owl who comes alive after dark';
+            
+            const currencySymbols = { USD: '$', EUR: '€', GBP: '£', CAD: 'C$', AUD: 'A$', INR: '₹', JPY: '¥' };
+            const currencySymbol = currencySymbols[financial.currency] || '$';
+            
+            const housing = financial.housingType === 'own' 
+                ? `a homeowner with a ${currencySymbol}${formatNumber(financial.mortgageAmount || 0)}/month mortgage`
+                : `renting at ${currencySymbol}${formatNumber(financial.rentAmount || 0)}/month`;
+            
+            const topInterests = (lifestyle.interests || []).slice(0, 3).join(', ') || 'various activities';
+            const topGoals = (lifestyle.lifeGoals || []).slice(0, 2).join(' and ') || 'personal growth';
+            
+            const savingsRate = financial.savingsRate || 0;
+            const savingsDesc = savingsRate >= 30 ? 'impressive' : savingsRate >= 15 ? 'solid' : 'growing';
+            
+            return `<strong>${name}</strong> is a <span class="highlight">${age}-year-old ${occupation}</span> based in <strong>${city}${state ? ', ' + state : ''}</strong>. 
+            Currently ${workStyle}, ${name} is ${schedule} who typically gets around <span class="highlight">${lifestyle.sleepHours || 8} hours</span> of sleep each night.
+            <br><br>
+            As ${housing}, ${name} maintains a <span class="highlight">${savingsDesc} ${savingsRate}% savings rate</span> with a monthly budget of ${currencySymbol}${formatNumber(financial.monthlyBudget || 0)}.
+            <br><br>
+            When not working, ${name} enjoys <span class="highlight">${topInterests}</span>. Looking ahead, the key priorities are to <span class="highlight">${topGoals}</span>.`;
+        }
+        
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(0) + 'K';
+            }
+            return num.toLocaleString();
+        }
+        
+        function getFullProfileJSON() {
+            const profile = userProfile || {};
+            
+            // Add metadata
+            const exportData = {
+                _meta: {
+                    exportedAt: new Date().toISOString(),
+                    version: '1.0',
+                    source: 'Zeitline'
+                },
+                personal: profile.personal || {},
+                lifestyle: profile.lifestyle || {},
+                financial: profile.financial || {},
+                settings: {
+                    onboardingComplete: profile.onboardingComplete || false,
+                    plan: profile.plan || 'free'
+                }
+            };
+            
+            return exportData;
+        }
+        
+        function downloadJSON() {
+            const data = getFullProfileJSON();
+            const json = JSON.stringify(data, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `zeitline-profile-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showSuccess('Profile downloaded successfully!');
+        }
+        
+        function toggleJSONPreview() {
+            const preview = document.getElementById('jsonPreview');
+            const content = document.getElementById('jsonContent');
+            
+            if (preview.classList.contains('visible')) {
+                preview.classList.remove('visible');
+            } else {
+                const data = getFullProfileJSON();
+                content.innerHTML = syntaxHighlight(JSON.stringify(data, null, 2));
+                preview.classList.add('visible');
+            }
+        }
+        
+        function copyJSON() {
+            const data = getFullProfileJSON();
+            const json = JSON.stringify(data, null, 2);
+            
+            navigator.clipboard.writeText(json).then(() => {
+                showSuccess('Profile copied to clipboard!');
+            }).catch(() => {
+                showError('Failed to copy to clipboard');
+            });
+        }
+        
+        function syntaxHighlight(json) {
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'key';
+                    } else {
+                        cls = 'string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'null';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            });
+        }
+        
+        function showSuccess(message) {
+            const existing = document.querySelector('.success-toast');
+            if (existing) existing.remove();
+            
+            const toast = document.createElement('div');
+            toast.className = 'success-toast';
+            toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()">×</button>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        function showError(message) {
+            const existing = document.querySelector('.error-toast');
+            if (existing) existing.remove();
+            
+            const toast = document.createElement('div');
+            toast.className = 'error-toast';
+            toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()">×</button>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Load from localStorage first
+            const savedProfile = localStorage.getItem('zeitline_profile');
+            if (savedProfile) {
+                try {
+                    loadAboutMe(JSON.parse(savedProfile), null);
+                } catch (e) {
+                    console.log('Could not load saved profile');
+                }
+            }
+            
+            // Also listen for auth state
+            window.addEventListener('authStateChanged', async (e) => {
+                const user = e.detail;
+                if (user) {
+                    const localProfile = localStorage.getItem('zeitline_profile');
+                    const profile = localProfile ? JSON.parse(localProfile) : {};
+                    loadAboutMe(profile, user);
+                    
+                    try {
+                        const response = await apiCall('/users/profile');
+                        if (response.data) {
+                            loadAboutMe(response.data, user);
+                        }
+                    } catch (error) {
+                        console.log('Could not load profile from API, using local data');
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+

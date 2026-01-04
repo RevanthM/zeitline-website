@@ -3,43 +3,131 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Complete Your Profile – Zeitline</title>
+    <title>Welcome to Zeitline – Let's Get to Know You</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/onboarding.css">
 </head>
 <body>
-    <div class="onboarding-page">
-        <!-- Header with progress -->
+    <div class="onboarding-page conversational">
+        <!-- Ambient Background -->
+        <div class="ambient-bg">
+            <div class="ambient-orb orb-1"></div>
+            <div class="ambient-orb orb-2"></div>
+            <div class="ambient-orb orb-3"></div>
+        </div>
+        
+        <!-- Header -->
         <header class="onboarding-header">
             <a href="/" class="logo">ZEITLINE</a>
             
-            <div class="progress-container">
-                <div class="progress-bar-wrapper">
-                    <div id="progressBar"></div>
-                </div>
-                <p id="progressText">Step 1 of 4</p>
+            <div class="section-nav" id="sectionNav">
+                <button class="section-pill active" data-section="life">
+                    <span class="pill-icon">🌱</span>
+                    <span class="pill-label">Life</span>
+                </button>
+                <button class="section-pill" data-section="health">
+                    <span class="pill-icon">💪</span>
+                    <span class="pill-label">Health</span>
+                </button>
+                <button class="section-pill" data-section="diet">
+                    <span class="pill-icon">🥗</span>
+                    <span class="pill-label">Diet</span>
+                </button>
+                <button class="section-pill" data-section="financial">
+                    <span class="pill-icon">💰</span>
+                    <span class="pill-label">Financial</span>
+                </button>
+                <button class="section-pill" data-section="goals">
+                    <span class="pill-icon">🎯</span>
+                    <span class="pill-label">Goals</span>
+                </button>
             </div>
             
-            <div class="step-indicators">
-                <div class="step-indicator active">1</div>
-                <div class="step-indicator">2</div>
-                <div class="step-indicator">3</div>
-                <div class="step-indicator">4</div>
+            <div class="header-actions">
+                <button class="btn btn-ghost" id="skipBtn" onclick="skipToSection()">Skip Section</button>
             </div>
         </header>
         
-        <!-- Onboarding content -->
-        <main class="onboarding-content">
-            <div id="onboardingContent">
-                <!-- Content will be rendered by JavaScript -->
-                <div style="text-align: center; padding: 4rem;">
-                    <div class="loading-spinner"></div>
-                    <p style="margin-top: 1rem; color: var(--text-secondary);">Loading...</p>
-                </div>
+        <!-- Main Chat Container -->
+        <main class="chat-container">
+            <div class="chat-messages" id="chatMessages">
+                <!-- Messages will be dynamically added here -->
+            </div>
+            
+            <!-- Quick Responses (shown for multiple choice questions) -->
+            <div class="quick-responses" id="quickResponses" style="display: none;">
+                <!-- Quick response buttons will be added here -->
             </div>
         </main>
+        
+        <!-- Input Area -->
+        <footer class="chat-input-area">
+            <div class="input-wrapper">
+                <button class="voice-btn" id="voiceBtn" onclick="toggleVoiceInput()" title="Voice input">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                </button>
+                <input 
+                    type="text" 
+                    class="chat-input" 
+                    id="chatInput" 
+                    placeholder="Type your answer or click the microphone to speak..."
+                    autocomplete="off"
+                >
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M22 2L11 13"/>
+                        <path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+                    </svg>
+                </button>
+            </div>
+            <p class="input-hint" id="inputHint">Press Enter to send or click the microphone to use voice</p>
+        </footer>
+        
+        <!-- Progress Indicator -->
+        <div class="progress-indicator" id="progressIndicator">
+            <div class="progress-ring">
+                <svg viewBox="0 0 36 36">
+                    <path class="progress-ring-bg"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke-width="2"
+                    />
+                    <path class="progress-ring-fill" id="progressRing"
+                        d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                        fill="none"
+                        stroke-width="2"
+                        stroke-dasharray="0, 100"
+                    />
+                </svg>
+                <span class="progress-percent" id="progressPercent">0%</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Completion Modal -->
+    <div class="completion-modal" id="completionModal">
+        <div class="completion-content">
+            <div class="completion-icon">🎉</div>
+            <h2>You're All Set!</h2>
+            <p>We've learned a lot about you. Your personalized Zeitline experience is ready.</p>
+            <div class="completion-summary" id="completionSummary">
+                <!-- Summary will be added here -->
+            </div>
+            <button class="btn btn-primary" onclick="goToDashboard()">
+                Go to Dashboard
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                </svg>
+            </button>
+        </div>
     </div>
     
     <!-- Firebase SDK -->
@@ -47,7 +135,6 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/js/firebase-config.js"></script>
-    <script src="/js/onboarding.js"></script>
+    <script src="/js/conversational-onboarding.js"></script>
 </body>
 </html>
-

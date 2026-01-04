@@ -343,26 +343,53 @@ router.get("/google/callback", async (req: Request, res: Response) => {
       console.error("Error importing Google Calendar events:", err);
     });
 
+    // Determine the base URL for redirect
+    const isEmulator = process.env.FUNCTIONS_EMULATOR === "true" || 
+                       process.env.FIREBASE_AUTH_EMULATOR_HOST !== undefined ||
+                       process.env.FIRESTORE_EMULATOR_HOST !== undefined;
+    const baseUrl = isEmulator ? "http://localhost:5500" : "https://zeitlineai.web.app";
+    
     res.send(`
       <html>
-        <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-          <h2>✅ Google Calendar Connected!</h2>
-          <p>Importing your events... This may take a moment.</p>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; text-align: center; background: #0a0a0f; color: #fff;">
+          <h2 style="color: #c9ff57;">✅ Google Calendar Connected!</h2>
+          <p style="color: #888;">Importing your events... Redirecting back to calendar...</p>
           <script>
-            window.opener.postMessage({ type: 'calendar_connected', provider: 'google' }, '*');
-            setTimeout(() => window.close(), 2000);
+            // Try to notify opener if this was a popup
+            if (window.opener) {
+              window.opener.postMessage({ type: 'calendar_connected', provider: 'google' }, '*');
+              setTimeout(() => window.close(), 1500);
+            } else {
+              // Redirect back to calendar page
+              setTimeout(() => {
+                window.location.href = '${baseUrl}/calendar.html?connected=google';
+              }, 1500);
+            }
           </script>
         </body>
       </html>
     `);
   } catch (error: any) {
     console.error("Error in Google OAuth callback:", error);
+    
+    const isEmulator = process.env.FUNCTIONS_EMULATOR === "true";
+    const baseUrl = isEmulator ? "http://localhost:5500" : "https://zeitlineai.web.app";
+    
     res.send(`
       <html>
-        <body style="font-family: Arial, sans-serif; padding: 40px; text-align: center;">
-          <h2>❌ Connection Failed</h2>
-          <p>${error.message || "An error occurred"}</p>
-          <script>setTimeout(() => window.close(), 3000);</script>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; text-align: center; background: #0a0a0f; color: #fff;">
+          <h2 style="color: #ff4444;">❌ Connection Failed</h2>
+          <p style="color: #888;">${error.message || "An error occurred"}</p>
+          <p><a href="${baseUrl}/calendar.html" style="color: #c9ff57;">Return to Calendar</a></p>
+          <script>
+            setTimeout(() => {
+              if (window.opener) {
+                window.close();
+              } else {
+                window.location.href = '${baseUrl}/calendar.html?error=connection_failed';
+              }
+            }, 3000);
+          </script>
         </body>
       </html>
     `);

@@ -6,10 +6,19 @@ import { verifyAuth } from "./middleware/auth";
 const router = express.Router();
 const db = admin.firestore();
 
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenAI client lazily to avoid startup errors
+let openai: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!openai) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.");
+    }
+    openai = new OpenAI({ apiKey });
+  }
+  return openai;
+}
 
 // Types for recurring event patterns
 interface RecurringPattern {
@@ -142,7 +151,7 @@ Respond in JSON format:
 }
 `;
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: RECURRING_EVENTS_SYSTEM_PROMPT },
@@ -228,7 +237,7 @@ Respond in JSON format:
 }
 `;
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: RECURRING_EVENTS_SYSTEM_PROMPT },
@@ -367,7 +376,7 @@ Respond in JSON format:
 }
 `;
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { role: "system", content: RECURRING_EVENTS_SYSTEM_PROMPT },
@@ -482,7 +491,7 @@ Keep responses concise (2-3 sentences max) and friendly.`;
       { role: "user", content: message },
     ];
 
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAIClient().chat.completions.create({
       model: "gpt-4o-mini",
       messages,
       temperature: 0.8, // More creative for conversational responses
@@ -501,7 +510,7 @@ Keep responses concise (2-3 sentences max) and friendly.`;
       message.toLowerCase().includes("schedule")
     ) {
       try {
-        const parseResponse = await openai.chat.completions.create({
+        const parseResponse = await getOpenAIClient().chat.completions.create({
           model: "gpt-4o-mini",
           messages: [
             {

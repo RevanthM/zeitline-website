@@ -6,6 +6,20 @@ function hasCompletedOnboarding() {
     return true;
   }
   
+  // Check if full onboarding data exists
+  const onboardingData = localStorage.getItem("zeitline_onboarding_data");
+  if (onboardingData) {
+    try {
+      const data = JSON.parse(onboardingData);
+      if (data.onboardingComplete) {
+        localStorage.setItem("zeitline_onboarding_complete", "true");
+        return true;
+      }
+    } catch (e) {
+      // Parse error
+    }
+  }
+  
   // Check if profile data exists with required fields filled
   const savedProfile = localStorage.getItem("zeitline_profile");
   if (savedProfile) {
@@ -37,21 +51,27 @@ document.addEventListener("DOMContentLoaded", () => {
   window.addEventListener("authStateChanged", async (e) => {
     const user = e.detail;
     if (user) {
-      // If on login page, user is existing - go to dashboard
+      // If on login page, user is existing - check onboarding status
       if (isLoginPage) {
-        localStorage.setItem("zeitline_onboarding_complete", "true");
-        window.location.href = "/dashboard.html";
+        if (hasCompletedOnboarding()) {
+          window.location.href = "/dashboard.html";
+        } else {
+          // Existing user but hasn't completed onboarding
+          window.location.href = "/onboarding-chat.html?mode=continue";
+        }
         return;
       }
       
       // If on signup page, check if they've completed onboarding
-      if (hasCompletedOnboarding()) {
-        window.location.href = "/dashboard.html";
-        return;
+      if (isSignupPage) {
+        if (hasCompletedOnboarding()) {
+          window.location.href = "/dashboard.html";
+          return;
+        }
+        
+        // New signup - go to chat onboarding
+        window.location.href = "/onboarding-chat.html?mode=new";
       }
-      
-      // New signup - go to onboarding
-      window.location.href = "/onboarding.html";
     }
   });
 });
@@ -97,14 +117,47 @@ async function handleSignUp(event) {
     const token = await user.getIdToken();
     localStorage.setItem("authToken", token);
 
-    // Create user profile via API
-    await apiCall("/users/create", {
-      method: "POST",
-      body: JSON.stringify({ email, fullName }),
-    });
+    // Pre-populate onboarding data with the name
+    const initialOnboardingData = {
+      life: {
+        fullName: fullName,
+        age: 0,
+        occupation: "",
+        city: "",
+        state: "",
+        country: "USA",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        livingWith: "",
+        relationshipStatus: "",
+        hasKids: false,
+        kidsCount: 0,
+        workStyle: "",
+        morningPerson: null,
+        sleepTime: "",
+        wakeTime: ""
+      },
+      health: {},
+      diet: {},
+      financial: {},
+      goals: {}
+    };
+    localStorage.setItem("zeitline_onboarding_data", JSON.stringify(initialOnboardingData));
+    
+    // Clear completion flag for new users
+    localStorage.removeItem("zeitline_onboarding_complete");
 
-    // Redirect to onboarding
-    window.location.href = "/onboarding.html";
+    // Try to create user profile via API
+    try {
+      await apiCall("/users/create", {
+        method: "POST",
+        body: JSON.stringify({ email, fullName }),
+      });
+    } catch (apiError) {
+      console.log("API call failed, continuing with local storage");
+    }
+
+    // Redirect to chat onboarding
+    window.location.href = "/onboarding-chat.html?mode=new";
   } catch (error) {
     console.error("Sign up error:", error);
     showError(getAuthErrorMessage(error));
@@ -149,21 +202,47 @@ async function handleGoogleSignIn() {
     const token = await user.getIdToken();
     localStorage.setItem("authToken", token);
 
+    let isNewUser = false;
     try {
       await apiCall("/users/profile");
-      // Profile exists, auth observer will redirect
+      // Profile exists
     } catch {
       // New user, create profile
-      await apiCall("/users/create", {
-        method: "POST",
-        body: JSON.stringify({
-          email: user.email,
+      isNewUser = true;
+      try {
+        await apiCall("/users/create", {
+          method: "POST",
+          body: JSON.stringify({
+            email: user.email,
+            fullName: user.displayName || "",
+          }),
+        });
+      } catch (e) {
+        console.log("API call failed, continuing with local storage");
+      }
+    }
+
+    if (isNewUser) {
+      // Pre-populate onboarding data
+      const initialOnboardingData = {
+        life: {
           fullName: user.displayName || "",
-        }),
-      });
+          age: 0,
+          occupation: "",
+          city: "",
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+        health: {},
+        diet: {},
+        financial: {},
+        goals: {}
+      };
+      localStorage.setItem("zeitline_onboarding_data", JSON.stringify(initialOnboardingData));
+      localStorage.removeItem("zeitline_onboarding_complete");
     }
 
     hideLoading();
+    // Auth observer will redirect
   } catch (error) {
     hideLoading();
     console.error("Google sign in error:", error);
@@ -180,16 +259,40 @@ async function handleAppleSignIn() {
     const token = await user.getIdToken();
     localStorage.setItem("authToken", token);
 
+    let isNewUser = false;
     try {
       await apiCall("/users/profile");
     } catch {
-      await apiCall("/users/create", {
-        method: "POST",
-        body: JSON.stringify({
-          email: user.email,
+      isNewUser = true;
+      try {
+        await apiCall("/users/create", {
+          method: "POST",
+          body: JSON.stringify({
+            email: user.email,
+            fullName: user.displayName || "",
+          }),
+        });
+      } catch (e) {
+        console.log("API call failed, continuing with local storage");
+      }
+    }
+
+    if (isNewUser) {
+      const initialOnboardingData = {
+        life: {
           fullName: user.displayName || "",
-        }),
-      });
+          age: 0,
+          occupation: "",
+          city: "",
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+        health: {},
+        diet: {},
+        financial: {},
+        goals: {}
+      };
+      localStorage.setItem("zeitline_onboarding_data", JSON.stringify(initialOnboardingData));
+      localStorage.removeItem("zeitline_onboarding_complete");
     }
 
     hideLoading();
@@ -285,4 +388,3 @@ function hideLoading() {
   const overlay = document.querySelector(".loading-overlay");
   if (overlay) overlay.remove();
 }
-
