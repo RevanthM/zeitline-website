@@ -28,7 +28,7 @@ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
 const API_BASE_URL =
   window.location.hostname === "localhost"
     ? "http://localhost:9000/zeitlineai/us-central1/api"
-    : "/api";
+    : "https://us-central1-zeitlineai.cloudfunctions.net/api";
 
 // Auth state observer
 let currentUser = null;
