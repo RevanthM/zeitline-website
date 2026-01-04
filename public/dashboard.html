@@ -163,6 +163,165 @@
             font-size: 0.9rem;
         }
         
+        .mobile-header {
+            display: none;
+            padding: 1rem;
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-subtle);
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        @media (max-width: 768px) {
+            .mobile-header {
+                display: flex;
+            }
+        }
+        
+        /* Activity Tracker Styles */
+        .activity-tracker {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 20px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .tracker-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .sync-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        
+        .sync-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: background 0.3s;
+        }
+        
+        .sync-dot.connected {
+            background: #22c55e;
+            box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+        }
+        
+        .active-session {
+            background: linear-gradient(135deg, rgba(201, 255, 87, 0.1), rgba(87, 255, 212, 0.1));
+            border: 1px solid rgba(201, 255, 87, 0.3);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .active-session-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.75rem;
+        }
+        
+        .active-session-info {
+            flex: 1;
+        }
+        
+        .active-session-name {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+        
+        .active-session-timer {
+            font-family: 'DM Sans', monospace;
+            font-size: 2rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            color: var(--accent-primary);
+        }
+        
+        .active-session-device {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+        
+        .stop-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.2s;
+        }
+        
+        .stop-btn:hover {
+            background: #dc2626;
+            transform: scale(1.05);
+        }
+        
+        .activity-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 0.75rem;
+        }
+        
+        .activity-btn {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem;
+            border-radius: 12px;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg-elevated);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .activity-btn:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+        
+        .activity-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .activity-btn-icon {
+            font-size: 1.5rem;
+        }
+        
+        .activity-btn-name {
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-align: center;
+        }
+        
+        .no-session-msg {
+            text-align: center;
+            padding: 1rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -204,6 +363,12 @@
                     </svg>
                     Predictions
                 </a>
+                <a href="/health.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                    Health
+                </a>
                 <a href="#" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="20" x2="18" y2="10"/>
@@ -211,6 +376,13 @@
                         <line x1="6" y1="20" x2="6" y2="14"/>
                     </svg>
                     Insights
+                </a>
+                <a href="/about-me.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    About Me
                 </a>
                 <a href="/settings.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -245,6 +417,29 @@
             <!-- Upgrade Banner - Hidden, managed in Settings -->
             <div class="upgrade-banner" id="upgradeBanner" style="display: none;"></div>
             
+            <!-- Activity Tracker - Start/Stop activities here -->
+            <div class="activity-tracker">
+                <div class="tracker-header">
+                    <h2 style="font-size: 1.25rem; margin: 0;">Track Activity</h2>
+                    <div class="sync-indicator">
+                        <div class="sync-dot" id="syncDot"></div>
+                        <span id="syncStatus">Connecting...</span>
+                    </div>
+                </div>
+                
+                <!-- Active Session Display -->
+                <div id="activeSessionContainer">
+                    <div class="no-session-msg" id="noSessionMsg">
+                        Select an activity below to start tracking
+                    </div>
+                </div>
+                
+                <!-- Activity Buttons Grid -->
+                <div class="activity-grid" id="activityGrid">
+                    <!-- Activities will be populated by JavaScript -->
+                </div>
+            </div>
+            
             <!-- Stats Grid -->
             <div class="stats-grid">
                 <div class="stat-card">
@@ -266,6 +461,66 @@
                     <div class="stat-label">Streak</div>
                     <div class="stat-value">12 days</div>
                     <div class="stat-change positive">🔥 Keep it up!</div>
+                </div>
+            </div>
+            
+            <!-- Nutrition & Fitness Summary -->
+            <div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
+                <!-- Nutrition Card -->
+                <div class="stat-card" style="position: relative;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+                        <div>
+                            <div class="stat-label">🍽️ Today's Nutrition</div>
+                            <div class="stat-value" style="font-size: 2rem;" id="dashCaloriesEaten">0</div>
+                            <div style="font-size: 0.85rem; color: var(--text-muted);">/ <span id="dashCalorieGoal">2000</span> cal</div>
+                        </div>
+                        <a href="/nutrition.html" class="btn btn-ghost" style="padding: 0.25rem 0.5rem;">View →</a>
+                    </div>
+                    <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Protein</div>
+                            <div style="height: 6px; background: var(--bg-elevated); border-radius: 3px; overflow: hidden;">
+                                <div id="dashProteinBar" style="height: 100%; width: 0%; background: var(--accent-secondary); border-radius: 3px; transition: width 0.5s;"></div>
+                            </div>
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Carbs</div>
+                            <div style="height: 6px; background: var(--bg-elevated); border-radius: 3px; overflow: hidden;">
+                                <div id="dashCarbsBar" style="height: 100%; width: 0%; background: #5b8def; border-radius: 3px; transition: width 0.5s;"></div>
+                            </div>
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">Fat</div>
+                            <div style="height: 6px; background: var(--bg-elevated); border-radius: 3px; overflow: hidden;">
+                                <div id="dashFatBar" style="height: 100%; width: 0%; background: #a855f7; border-radius: 3px; transition: width 0.5s;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Exercise Card -->
+                <div class="stat-card">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+                        <div>
+                            <div class="stat-label">🏃 Exercise Today</div>
+                            <div class="stat-value" style="font-size: 2rem; color: var(--accent-tertiary);" id="dashCaloriesBurned">0</div>
+                            <div style="font-size: 0.85rem; color: var(--text-muted);">calories burned</div>
+                        </div>
+                        <a href="/exercise.html" class="btn btn-ghost" style="padding: 0.25rem 0.5rem;">View →</a>
+                    </div>
+                    <div style="display: flex; gap: 2rem; margin-top: 1rem;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: 700;" id="dashExerciseDuration">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">minutes</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: 700;" id="dashExerciseCount">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">workouts</div>
+                        </div>
+                        <div style="flex: 1; display: flex; align-items: center; justify-content: flex-end;">
+                            <a href="/exercise.html" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.85rem;">+ Log</a>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -368,13 +623,242 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/js/firebase-config.js?v=2.0"></script>
+    <script src="/js/activity-manager.js"></script>
+    <script>
+        // Timer update interval
+        let timerInterval = null;
+        
+        // Render activity buttons
+        function renderActivityButtons() {
+            const grid = document.getElementById('activityGrid');
+            const hasActiveSession = !!activityManager.activeSession;
+            
+            grid.innerHTML = activityManager.defaultActivities.map(activity => `
+                <button class="activity-btn" 
+                        onclick="startActivity('${activity.name}', '${activity.icon}', '${activity.color}')"
+                        ${hasActiveSession ? 'disabled' : ''}>
+                    <span class="activity-btn-icon">${activity.icon}</span>
+                    <span class="activity-btn-name">${activity.name}</span>
+                </button>
+            `).join('');
+        }
+        
+        // Render active session
+        function renderActiveSession(session) {
+            const container = document.getElementById('activeSessionContainer');
+            const noSessionMsg = document.getElementById('noSessionMsg');
+            
+            if (session) {
+                const bgColor = activityManager.getColorValue(session.activityColor);
+                const deviceLabel = session.deviceId === 'web' ? 'Started on Web' : 
+                                   session.deviceId?.includes('-') ? 'Started on iPhone/Watch' : 
+                                   `Started on ${session.deviceId}`;
+                
+                container.innerHTML = `
+                    <div class="active-session">
+                        <div class="active-session-icon" style="background: ${bgColor}20;">
+                            ${session.activityIcon}
+                        </div>
+                        <div class="active-session-info">
+                            <div class="active-session-name">${session.activityName}</div>
+                            <div class="active-session-timer" id="sessionTimer">00:00</div>
+                            <div class="active-session-device">${deviceLabel}</div>
+                        </div>
+                        <button class="stop-btn" onclick="stopActivity()">Stop</button>
+                    </div>
+                `;
+                
+                // Start timer updates
+                startTimerUpdates();
+            } else {
+                container.innerHTML = `
+                    <div class="no-session-msg">
+                        Select an activity below to start tracking
+                    </div>
+                `;
+                stopTimerUpdates();
+            }
+            
+            // Update button states
+            renderActivityButtons();
+        }
+        
+        // Timer update loop
+        function startTimerUpdates() {
+            stopTimerUpdates();
+            updateTimer();
+            timerInterval = setInterval(updateTimer, 1000);
+        }
+        
+        function stopTimerUpdates() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+        
+        function updateTimer() {
+            const timerEl = document.getElementById('sessionTimer');
+            if (timerEl && activityManager.activeSession) {
+                timerEl.textContent = activityManager.getActiveSessionElapsedFormatted();
+            }
+        }
+        
+        // Start an activity
+        async function startActivity(name, icon, color) {
+            try {
+                await activityManager.startActivity(name, icon, color);
+                // UI will update via the subscription callback
+            } catch (error) {
+                console.error('Failed to start activity:', error);
+                alert('Failed to start activity: ' + error.message);
+            }
+        }
+        
+        // Stop the current activity
+        async function stopActivity() {
+            try {
+                await activityManager.stopActivity();
+                // UI will update via the subscription callback
+            } catch (error) {
+                console.error('Failed to stop activity:', error);
+                alert('Failed to stop activity: ' + error.message);
+            }
+        }
+        
+        // Handle activities update from Firestore (real-time)
+        function onActivitiesChanged(activities) {
+            const dot = document.getElementById('syncDot');
+            const status = document.getElementById('syncStatus');
+            
+            dot.classList.add('connected');
+            status.textContent = 'Live • ' + new Date().toLocaleTimeString();
+            
+            // Update today's timeline with real data
+            updateTodayTimeline(activities);
+            
+            // Update stats
+            updateStats(activities);
+        }
+        
+        // Handle active session change
+        function onActiveSessionChanged(session) {
+            renderActiveSession(session);
+        }
+        
+        // Update today's timeline with real activities
+        function updateTodayTimeline(activities) {
+            const timelineList = document.getElementById('timelineList');
+            const today = new Date().toDateString();
+            
+            // Filter to today's stopped activities
+            const todayActivities = activities
+                .filter(a => {
+                    const activityDate = new Date(a.start_time).toDateString();
+                    return activityDate === today && a.event_type === 'stopped';
+                })
+                .slice(0, 10);
+            
+            if (todayActivities.length === 0) {
+                timelineList.innerHTML = `
+                    <li class="timeline-entry">
+                        <div class="entry-details" style="text-align: center; color: var(--text-muted);">
+                            No completed activities today yet. Start tracking above!
+                        </div>
+                    </li>
+                `;
+                return;
+            }
+            
+            timelineList.innerHTML = todayActivities.map(activity => {
+                const startTime = new Date(activity.start_time);
+                const endTime = new Date(activity.end_time);
+                const duration = activity.duration || 0;
+                
+                const formatTime = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                const formatDuration = (s) => {
+                    const h = Math.floor(s / 3600);
+                    const m = Math.floor((s % 3600) / 60);
+                    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+                };
+                
+                const bgColor = activityManager.getColorValue(activity.activity_color);
+                
+                return `
+                    <li class="timeline-entry">
+                        <div class="entry-icon" style="background: ${bgColor}20;">${activity.activity_icon}</div>
+                        <div class="entry-details">
+                            <div class="entry-name">${activity.activity_name}</div>
+                            <div class="entry-time">${formatTime(startTime)} – ${formatTime(endTime)}</div>
+                        </div>
+                        <div class="entry-duration">${formatDuration(duration)}</div>
+                    </li>
+                `;
+            }).join('');
+        }
+        
+        // Update stats with real data
+        function updateStats(activities) {
+            const today = new Date().toDateString();
+            const todayActivities = activities.filter(a => {
+                const activityDate = new Date(a.start_time).toDateString();
+                return activityDate === today && a.event_type === 'stopped';
+            });
+            
+            // Count activities today
+            const activityCount = todayActivities.length;
+            
+            // Total time tracked today
+            const totalSeconds = todayActivities.reduce((sum, a) => sum + (a.duration || 0), 0);
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const timeTracked = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+            
+            // Update stat cards
+            const statCards = document.querySelectorAll('.stat-card');
+            if (statCards[0]) {
+                statCards[0].querySelector('.stat-value').textContent = activityCount;
+            }
+            if (statCards[1]) {
+                statCards[1].querySelector('.stat-value').textContent = timeTracked || '0m';
+            }
+        }
+        
+        // Initialize activity tracking when authenticated
+        function initActivityTracking() {
+            renderActivityButtons();
+            
+            // Subscribe to real-time updates from Firestore
+            activityManager.subscribeToActivities(
+                onActivitiesChanged,
+                onActiveSessionChanged
+            );
+        }
+    </script>
     <script>
         // Dashboard functionality
-        function loadDashboard(profile) {
-            // Update UI with user info
-            const firstName = profile?.personal?.fullName?.split(' ')[0] || 'User';
+        function loadDashboard(profile, firebaseUser = null) {
+            // Try to get name from profile, then from Firebase user
+            let fullName = profile?.personal?.fullName;
+            let photoURL = profile?.personal?.photoURL;
+            let email = profile?.personal?.email;
+            
+            // Fallback to Firebase user data
+            if (firebaseUser) {
+                fullName = fullName || firebaseUser.displayName;
+                photoURL = photoURL || firebaseUser.photoURL;
+                email = email || firebaseUser.email;
+            }
+            
+            const firstName = fullName?.split(' ')[0] || 'User';
             document.getElementById('userName').textContent = firstName;
-            document.getElementById('userAvatar').textContent = firstName.charAt(0).toUpperCase();
+            
+            const avatarEl = document.getElementById('userAvatar');
+            if (photoURL) {
+                avatarEl.innerHTML = `<img src="${photoURL}" alt="${firstName}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">`;
+            } else {
+                avatarEl.textContent = firstName.charAt(0).toUpperCase();
+            }
             
             // Pro and Free have the same features for now
             // Upgrade option available in Settings
@@ -407,7 +891,7 @@
                     // Check if we have local data (demo mode)
                     const localProfile = localStorage.getItem('zeitline_profile');
                     if (localProfile) {
-                        loadDashboard(JSON.parse(localProfile));
+                        loadDashboard(JSON.parse(localProfile), null);
                         return;
                     }
                     window.location.href = '/login.html';
@@ -425,16 +909,82 @@
                         return;
                     }
                     
-                    loadDashboard(profile);
+                    loadDashboard(profile, user);
+                    initActivityTracking();
                 } catch (error) {
                     console.error('Error loading profile:', error);
-                    // Fallback to local storage
+                    // Fallback to local storage with Firebase user data
                     const localProfile = localStorage.getItem('zeitline_profile');
-                    if (localProfile) {
-                        loadDashboard(JSON.parse(localProfile));
-                    }
+                    const profile = localProfile ? JSON.parse(localProfile) : {};
+                    loadDashboard(profile, user);
+                    initActivityTracking();
                 }
             });
+        });
+        
+        // Load nutrition and exercise data for dashboard
+        function loadNutritionExerciseData(userId) {
+            const today = new Date();
+            const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+            const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+            
+            // Default goals
+            let nutritionGoals = { calories: 2000, protein: 50, carbs: 250, fat: 65 };
+            
+            // Load goals
+            db.collection('users').doc(userId).get().then(doc => {
+                if (doc.exists && doc.data().nutritionGoals) {
+                    nutritionGoals = { ...nutritionGoals, ...doc.data().nutritionGoals };
+                    document.getElementById('dashCalorieGoal').textContent = nutritionGoals.calories;
+                }
+            });
+            
+            // Listen to food entries
+            db.collection('users').doc(userId)
+                .collection('foodEntries')
+                .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(startOfDay))
+                .where('timestamp', '<=', firebase.firestore.Timestamp.fromDate(endOfDay))
+                .onSnapshot(snapshot => {
+                    const entries = snapshot.docs.map(doc => doc.data());
+                    
+                    const totals = entries.reduce((acc, entry) => {
+                        const servings = entry.numberOfServings || 1;
+                        return {
+                            calories: acc.calories + (entry.calories || 0) * servings,
+                            protein: acc.protein + (entry.protein || 0) * servings,
+                            carbs: acc.carbs + (entry.carbs || 0) * servings,
+                            fat: acc.fat + (entry.fat || 0) * servings
+                        };
+                    }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
+                    
+                    document.getElementById('dashCaloriesEaten').textContent = Math.round(totals.calories);
+                    document.getElementById('dashProteinBar').style.width = Math.min(totals.protein / nutritionGoals.protein * 100, 100) + '%';
+                    document.getElementById('dashCarbsBar').style.width = Math.min(totals.carbs / nutritionGoals.carbs * 100, 100) + '%';
+                    document.getElementById('dashFatBar').style.width = Math.min(totals.fat / nutritionGoals.fat * 100, 100) + '%';
+                });
+            
+            // Listen to exercise entries
+            db.collection('users').doc(userId)
+                .collection('exerciseEntries')
+                .where('timestamp', '>=', firebase.firestore.Timestamp.fromDate(startOfDay))
+                .where('timestamp', '<=', firebase.firestore.Timestamp.fromDate(endOfDay))
+                .onSnapshot(snapshot => {
+                    const entries = snapshot.docs.map(doc => doc.data());
+                    
+                    const totalCalories = entries.reduce((sum, e) => sum + (e.caloriesBurned || 0), 0);
+                    const totalDuration = entries.reduce((sum, e) => sum + (e.duration || 0), 0);
+                    
+                    document.getElementById('dashCaloriesBurned').textContent = Math.round(totalCalories);
+                    document.getElementById('dashExerciseDuration').textContent = Math.round(totalDuration);
+                    document.getElementById('dashExerciseCount').textContent = entries.length;
+                });
+        }
+        
+        // Call when auth is ready
+        firebase.auth().onAuthStateChanged(user => {
+            if (user) {
+                loadNutritionExerciseData(user.uid);
+            }
         });
         
     </script>

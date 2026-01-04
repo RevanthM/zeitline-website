@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Calendar – Zeitline</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -226,14 +229,14 @@
             padding: 0;
             display: flex;
             flex-direction: column;
-            /* Height: 70px spacer + 24 hours * 60px = 1510px (Google Calendar style) */
+            /* Height: 149px spacer + 24 hours * 60px = 1589px (Google Calendar style) */
             /* Half-hour markers are visual only - they don't affect the 60px per hour structure */
-            height: 1510px;
+            height: 1589px;
             box-sizing: border-box;
         }
         
         .time-column-spacer {
-            height: 70px; /* Match weekday header height exactly */
+            height: 149px; /* Match weekday header + grid header offset */
             border-bottom: 1px solid var(--border-subtle);
             background: var(--bg-deep);
         }
@@ -247,7 +250,7 @@
         }
         
         .time-label {
-            height: 60px;
+            height: 30px; /* 30px label + 30px half-hour = 60px per hour */
             display: flex;
             align-items: flex-start;
             justify-content: flex-end;
@@ -901,112 +904,170 @@
             background: rgba(201, 255, 87, 0.05);
         }
         
-        
-        /* Cal.com-inspired event styling */
-        .day-event-item {
+        /* All-day events section - Google Calendar style */
+        .all-day-events-section {
             position: absolute;
+            top: -60px;
             left: 0;
             right: 0;
+            min-height: 24px;
+            max-height: 60px;
+            overflow-y: auto;
+            background: var(--bg-elevated);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 4px 2px;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .all-day-event {
+            padding: 2px 8px;
+            font-size: 0.6875rem;
+            font-weight: 500;
+            border-radius: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: all 0.15s ease;
+        }
+        
+        .all-day-event:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        .all-day-event.google {
+            background: #4285f4;
+            color: #fff;
+        }
+        .all-day-event.outlook {
+            background: #0078d4;
+            color: #fff;
+        }
+        .all-day-event.apple {
+            background: #ff9500;
+            color: #fff;
+        }
+        .all-day-event.zeitline {
+            background: rgba(201, 255, 87, 0.9);
+            color: #1a1a2e;
+        }
+        .all-day-event.multiple {
+            background: #8e44ad;
+            color: #fff;
+        }
+        
+        
+        /* Google Calendar-inspired event styling */
+        .day-event-item {
+            position: absolute;
+            left: 2px;
+            right: 2px;
             background: var(--bg-elevated);
             border-left: 4px solid;
-            border-radius: 6px;
-            padding: 4px 8px;
-            margin: 2px 4px;
+            border-radius: 4px;
+            padding: 2px 6px;
             cursor: pointer;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.15s ease;
             overflow: hidden;
-            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
             z-index: 5;
-            font-size: 0.75rem;
-            line-height: 1.4;
-            backdrop-filter: blur(10px);
+            font-size: 0.6875rem;
+            line-height: 1.3;
+            min-height: 20px;
         }
         
         .day-event-item:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            transform: translateY(-1px);
-            z-index: 10;
-            border-left-width: 5px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            z-index: 15;
         }
         
         .day-event-item:active {
-            transform: translateY(0);
+            transform: scale(0.99);
         }
         
         .day-event-item.week-event {
-            margin: 1px 2px;
-            font-size: 0.6875rem;
+            font-size: 0.625rem;
             padding: 1px 4px;
+            border-radius: 3px;
         }
         
-        /* Cal.com-inspired event colors with better contrast */
+        /* Google Calendar-inspired event colors */
         .day-event-item.google { 
             border-left-color: #4285f4;
-            background: linear-gradient(90deg, rgba(66, 133, 244, 0.2) 0%, rgba(66, 133, 244, 0.1) 100%);
-            color: #e8f0fe;
+            background: #4285f4;
+            color: #fff;
         }
         .day-event-item.google:hover {
-            background: linear-gradient(90deg, rgba(66, 133, 244, 0.3) 0%, rgba(66, 133, 244, 0.15) 100%);
+            background: #3b78e7;
         }
         .day-event-item.outlook { 
             border-left-color: #0078d4;
-            background: linear-gradient(90deg, rgba(0, 120, 212, 0.2) 0%, rgba(0, 120, 212, 0.1) 100%);
-            color: #deecf9;
+            background: #0078d4;
+            color: #fff;
         }
         .day-event-item.outlook:hover {
-            background: linear-gradient(90deg, rgba(0, 120, 212, 0.3) 0%, rgba(0, 120, 212, 0.15) 100%);
+            background: #006cbe;
         }
         .day-event-item.apple { 
-            border-left-color: #86868b;
-            background: linear-gradient(90deg, rgba(134, 134, 139, 0.2) 0%, rgba(134, 134, 139, 0.1) 100%);
-            color: #f5f5f7;
+            border-left-color: #ff9500;
+            background: #ff9500;
+            color: #fff;
         }
         .day-event-item.apple:hover {
-            background: linear-gradient(90deg, rgba(134, 134, 139, 0.3) 0%, rgba(134, 134, 139, 0.15) 100%);
+            background: #e68600;
         }
         .day-event-item.zeitline { 
-            border-left-color: var(--accent-primary);
-            background: linear-gradient(90deg, rgba(201, 255, 87, 0.2) 0%, rgba(201, 255, 87, 0.1) 100%);
-            color: #f0f0f5;
+            border-left-color: #c9ff57;
+            background: rgba(201, 255, 87, 0.9);
+            color: #1a1a2e;
         }
         .day-event-item.zeitline:hover {
-            background: linear-gradient(90deg, rgba(201, 255, 87, 0.3) 0%, rgba(201, 255, 87, 0.15) 100%);
+            background: #c9ff57;
         }
         .day-event-item.multiple { 
-            border-left-color: var(--accent-secondary);
-            background: linear-gradient(90deg, rgba(87, 255, 212, 0.2) 0%, rgba(87, 255, 212, 0.1) 100%);
-            color: #f0f0f5;
+            border-left-color: #8e44ad;
+            background: #8e44ad;
+            color: #fff;
         }
         .day-event-item.multiple:hover {
-            background: linear-gradient(90deg, rgba(87, 255, 212, 0.3) 0%, rgba(87, 255, 212, 0.15) 100%);
+            background: #7d3c98;
         }
         
         .event-title {
-            font-weight: 400;
-            font-size: 0.8125rem;
+            font-weight: 500;
+            font-size: 0.6875rem;
             margin-bottom: 0;
-            line-height: 1.3;
+            line-height: 1.2;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
         
         .event-time {
-            font-size: 0.6875rem;
-            color: var(--text-secondary);
-            margin-top: 1px;
+            font-size: 0.5625rem;
+            opacity: 0.9;
+            margin-top: 0;
             line-height: 1.2;
         }
         
         .event-location {
-            font-size: 0.6875rem;
-            color: var(--text-muted);
-            margin-top: 2px;
+            font-size: 0.5625rem;
             opacity: 0.8;
+            margin-top: 1px;
             line-height: 1.2;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+        
+        /* For small events, hide extra info */
+        .day-event-item[style*="height: 1."] .event-time,
+        .day-event-item[style*="height: 2."] .event-time {
+            display: none;
         }
         
         /* Cal.com-inspired calendar day styling */
@@ -1632,7 +1693,6 @@
                 display: none;
             }
         }
-        
         /* AI Assistant Chatbot Styles */
         .ai-assistant-container {
             position: fixed;
@@ -1699,6 +1759,17 @@
         
         .ai-assistant-panel.active {
             display: flex;
+        }
+        
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         
         .ai-assistant-header {
@@ -1947,6 +2018,20 @@
             }
         }
         
+        /* Recurring Event Badge */
+        .recurring-event-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            background: rgba(201, 255, 87, 0.15);
+            border: 1px solid var(--accent-primary);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: var(--accent-primary);
+            margin-left: 0.5rem;
+        }
+        
         @media (max-width: 768px) {
             .ai-assistant-panel {
                 width: calc(100vw - 24px);
@@ -2127,7 +2212,7 @@
         <div class="event-detail-content" onclick="event.stopPropagation()">
             <div class="event-detail-header">
                 <button class="event-detail-close" onclick="closeEventModal()" aria-label="Close">×</button>
-                <h2 class="event-detail-title" id="eventTitle">Event Title</h2>
+            <h2 class="event-detail-title" id="eventTitle">Event Title</h2>
                 <div class="event-detail-time" id="eventTime">
                     <svg class="event-detail-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/>
@@ -2178,7 +2263,7 @@
             </div>
             
             <div class="event-detail-footer">
-                <div class="event-detail-actions">
+            <div class="event-detail-actions">
                     <button class="btn btn-secondary" onclick="duplicateEvent()" title="Duplicate event">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
@@ -2291,8 +2376,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/js/firebase-config.js"></script>
-    <script src="/js/calendar.js?v=4.1&t=1767503538"></script>
+    <script src="/js/firebase-config.js?v=2.1"></script>
+    <script src="/js/calendar.js?v=6.1"></script>
 </body>
 </html>
 

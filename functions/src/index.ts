@@ -86,6 +86,7 @@ import usersRouter from "./users";
 import stripeRouter from "./stripe";
 import calendarsRouter from "./calendars";
 import aiAssistantRouter from "./ai-assistant";
+import nutritionRouter from "./nutrition";
 
 // Create Express app
 const app = express();
@@ -143,6 +144,7 @@ app.use("/users", usersRouter);
 app.use("/stripe", stripeRouter);
 app.use("/calendars", calendarsRouter);
 app.use("/ai-assistant", aiAssistantRouter);
+app.use("/nutrition", nutritionRouter);
 
 // Error handling middleware - must be before 404 handler
 // Note: Express error handlers must have 4 parameters

@@ -7,7 +7,9 @@ let selectedDate = null;
 let calendarEvents = {};
 let connectedCalendars = [];
 let zoomLevel = 0; // 0 = default hourly (max zoom out), 1 = 15-min intervals, 2 = 1-min intervals for 2 hours (max zoom in)
-let selectedTimezone = 'America/Los_Angeles'; // Default to LA timezone
+
+// Auto-detect user's system timezone
+let selectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles';
 
 // Calendar color preferences (theme-friendly colors)
 let calendarColors = {
@@ -20,77 +22,108 @@ let calendarColors = {
 
 // Initialize calendar
 document.addEventListener('DOMContentLoaded', async () => {
-    loadUserInfo();
-    
-    // Load timezone preference from localStorage
-    const savedTimezone = localStorage.getItem('calendarTimezone');
-    if (savedTimezone) {
-        selectedTimezone = savedTimezone;
-    }
-    
-    // Load calendar color preferences from localStorage
-    const savedColors = localStorage.getItem('calendarColors');
-    if (savedColors) {
-        try {
-            calendarColors = { ...calendarColors, ...JSON.parse(savedColors) };
-        } catch (e) {
-            console.error('Error loading calendar colors:', e);
+    try {
+        console.log('Calendar: Initializing...');
+        loadUserInfo();
+        
+        // Load timezone preference from localStorage, or use system timezone
+        const savedTimezone = localStorage.getItem('calendarTimezone');
+        if (savedTimezone) {
+            selectedTimezone = savedTimezone;
+        } else {
+            // Auto-save the detected system timezone
+            const systemTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (systemTimezone) {
+                selectedTimezone = systemTimezone;
+                localStorage.setItem('calendarTimezone', systemTimezone);
+                console.log('Auto-detected timezone:', systemTimezone);
+            }
         }
-    }
-    
-    // Apply saved colors
-    applyCalendarColors();
-    
-    // Render calendar connections immediately (with empty array)
-    // Use setTimeout to ensure DOM is fully ready
-    setTimeout(() => {
-        renderCalendarConnections();
-        // Initialize timezone selector after DOM is ready
-        initializeTimezoneSelector();
-    }, 100);
-    
-    // Wait for Firebase Auth to be ready
-    await waitForAuth();
-    
-    await loadConnectedCalendars();
-    
-    // Set initial selected date if not set
-    if (!selectedDate) {
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = today.getMonth() + 1;
-        const day = today.getDate();
-        selectedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    }
-    
-    await loadCalendarEvents();
-    
-    // Initialize time column
-    renderTimeColumn();
-    
-    // Render based on current view
-    if (currentView === 'month') {
-        renderCalendar();
-    } else if (currentView === 'week') {
-        renderWeekView();
-    } else if (currentView === 'day') {
-        renderDayView();
-    } else {
-        renderCalendar();
-    }
-    
-    // Check if user signed in with Google and auto-connect calendar
-    checkGoogleSignIn();
-    
-    // Listen for OAuth callback messages
-    window.addEventListener('message', async (event) => {
-        if (event.data && event.data.type === 'calendar_connected') {
-            hideLoading();
-            await loadConnectedCalendars();
-            await loadCalendarEvents();
-            showSuccess(`${event.data.provider} calendar connected successfully!`);
+        
+        // Load calendar color preferences from localStorage
+        const savedColors = localStorage.getItem('calendarColors');
+        if (savedColors) {
+            try {
+                calendarColors = { ...calendarColors, ...JSON.parse(savedColors) };
+            } catch (e) {
+                console.error('Error loading calendar colors:', e);
+            }
         }
-    });
+        
+        // Apply saved colors
+        applyCalendarColors();
+        
+        // Render calendar connections immediately (with empty array)
+        // Use setTimeout to ensure DOM is fully ready
+        setTimeout(() => {
+            try {
+                console.log('Attempting to render calendar connections and timezone selector...');
+                renderCalendarConnections();
+                // Initialize timezone selector after DOM is ready
+                initializeTimezoneSelector();
+                console.log('Calendar UI initialization complete');
+            } catch (e) {
+                console.error('Error initializing calendar UI:', e);
+                // Show error in UI if elements exist
+                const connectionsContainer = document.getElementById('calendarConnections');
+                if (connectionsContainer) {
+                    connectionsContainer.innerHTML = '<p style="color: var(--error);">Error loading calendar connections. Please refresh the page.</p>';
+                }
+            }
+        }, 100);
+        
+        // Wait for Firebase Auth to be ready
+        await waitForAuth();
+        
+        await loadConnectedCalendars();
+        
+        // Set initial selected date if not set
+        if (!selectedDate) {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = today.getMonth() + 1;
+            const day = today.getDate();
+            selectedDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        }
+        
+        await loadCalendarEvents();
+        
+        // Initialize time column
+        renderTimeColumn();
+        
+        // Render based on current view
+        if (currentView === 'month') {
+            renderCalendar();
+        } else if (currentView === 'week') {
+            renderWeekView();
+        } else if (currentView === 'day') {
+            renderDayView();
+        } else {
+            renderCalendar();
+        }
+        
+        // Check if user signed in with Google and auto-connect calendar
+        checkGoogleSignIn();
+        
+        // Listen for OAuth callback messages
+        window.addEventListener('message', async (event) => {
+            if (event.data && event.data.type === 'calendar_connected') {
+                hideLoading();
+                await loadConnectedCalendars();
+                await loadCalendarEvents();
+                showSuccess(`${event.data.provider} calendar connected successfully!`);
+            }
+        });
+        
+        console.log('Calendar: Initialization complete');
+    } catch (error) {
+        console.error('Calendar: Fatal error during initialization:', error);
+        // Show error to user
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = 'position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 1rem; background: #ff4444; color: white; border-radius: 8px; z-index: 10000;';
+        errorDiv.textContent = 'Error loading calendar. Please refresh the page.';
+        document.body.appendChild(errorDiv);
+    }
 });
 
 // Wait for Firebase Auth to be initialized
@@ -102,6 +135,20 @@ function waitForAuth() {
             return;
         }
         
+        // Check if Firebase app is initialized
+        try {
+            const apps = firebase.apps;
+            if (!apps || apps.length === 0) {
+                // Firebase not initialized yet, wait
+                setTimeout(() => waitForAuth().then(resolve), 100);
+                return;
+            }
+        } catch (e) {
+            // Can't check apps, wait and retry
+            setTimeout(() => waitForAuth().then(resolve), 100);
+            return;
+        }
+        
         // Check if auth is available
         if (!firebase.auth) {
             setTimeout(() => waitForAuth().then(resolve), 100);
@@ -109,7 +156,7 @@ function waitForAuth() {
         }
         
         try {
-            // Get auth instance
+            // Get auth instance - this should work now
             const auth = firebase.auth();
             
             // Auth is ready - we can now safely use auth.currentUser
@@ -172,11 +219,11 @@ function initializeTimezoneSelector() {
     const statusText = document.getElementById('timezoneStatus');
     
     if (!timezoneSelect) {
-        console.log('Timezone selector not found - may not be on calendar page');
+        console.warn('Timezone selector not found - may not be on calendar page');
         return; // Not on calendar page
     }
     
-    console.log('Initializing timezone selector...');
+    console.log('Initializing timezone selector...', timezoneSelect);
     
     // Get all available timezones
     let allTimezones = [];
@@ -265,7 +312,7 @@ function initializeTimezoneSelector() {
     
     timezoneSelect.innerHTML = optionsHTML;
     
-    console.log(`Populated timezone selector with ${timezones.length} options, selected: ${selectedTimezone}`);
+    console.log(`Populated timezone selector with ${allTimezones.length} options, selected: ${selectedTimezone}`);
     
     // Update status text
     updateTimezoneStatus();
@@ -372,9 +419,10 @@ async function loadConnectedCalendars() {
 function renderCalendarConnections() {
     const container = document.getElementById('calendarConnections');
     if (!container) {
-        console.log('Calendar connections container not found');
+        console.warn('Calendar connections container not found - checking if page loaded correctly');
         return; // Container doesn't exist on this page
     }
+    console.log('Rendering calendar connections in container:', container);
     
     // Ensure connectedCalendars is initialized
     if (!connectedCalendars) {
@@ -509,28 +557,109 @@ window.updateCalendarColor = updateCalendarColor;
 
 // Make connectCalendar globally accessible
 window.connectCalendar = async function(type) {
+    // Log immediately - this should always show
+    console.log('🔵🔵🔵 connectCalendar CALLED with type:', type);
+    console.log('🔵 Window object:', {
+        connectCalendarExists: typeof window.connectCalendar !== 'undefined',
+        firebaseExists: typeof firebase !== 'undefined',
+        authExists: typeof firebase !== 'undefined' && !!firebase.auth
+    });
+    
+    // Alert for debugging (remove after fixing)
+    // alert('connectCalendar called with type: ' + type);
+    
     try {
         // Check if Firebase is available
-        if (typeof firebase === 'undefined' || !firebase.auth) {
+        if (typeof firebase === 'undefined') {
+            console.error('❌ Firebase is not loaded');
+            showError('Firebase is not loaded. Please refresh the page.');
+            return;
+        }
+        
+        // Check if Firebase app is initialized
+        let app = null;
+        try {
+            app = firebase.app();
+        } catch (error) {
+            console.error('❌ Firebase app not initialized:', error);
             showError('Firebase is not initialized. Please refresh the page.');
             return;
         }
         
-        // Check if user is logged in
-        const auth = firebase.auth();
+        // Check if auth is available
+        if (!firebase.auth) {
+            console.error('❌ Firebase auth not available');
+            showError('Firebase Auth is not available. Please refresh the page.');
+            return;
+        }
         
-        let user = null;
+        console.log('✅ Firebase is available and initialized');
+        
+        // Get auth instance
+        let auth = null;
         try {
-            user = auth.currentUser;
-        } catch (e) {
-            showError('Firebase Auth is not ready. Please refresh the page.');
+            auth = firebase.auth();
+        } catch (error) {
+            console.error('❌ Error getting auth instance:', error);
+            showError('Firebase Auth is not available. Please refresh the page.');
             return;
         }
         
+        // ALWAYS check auth.currentUser directly first - this is the most reliable
+        let user = auth.currentUser;
+        
+        console.log('connectCalendar: Direct auth.currentUser check:', {
+            hasUser: !!user,
+            userEmail: user?.email,
+            userUid: user?.uid
+        });
+        
+        // If no user from direct check, try other methods
         if (!user) {
-            showError('Please log in first before connecting calendars.');
+            // Check window.currentUser
+            user = window.currentUser;
+            console.log('connectCalendar: window.currentUser check:', {
+                hasUser: !!user,
+                userEmail: user?.email
+            });
+        }
+        
+        // If still no user, wait a moment and check again (auth might still be initializing)
+        if (!user) {
+            console.log('connectCalendar: No user found, waiting 1 second and rechecking...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            user = auth.currentUser || window.currentUser;
+            console.log('connectCalendar: After wait, user:', {
+                hasUser: !!user,
+                userEmail: user?.email,
+                fromAuth: !!auth.currentUser,
+                fromWindow: !!window.currentUser
+            });
+        }
+        
+        // Final check - if still no user, show helpful error
+        if (!user) {
+            console.error('❌ connectCalendar: No user found');
+            console.error('Debug info:', {
+                authCurrentUser: auth.currentUser,
+                windowCurrentUser: window.currentUser,
+                authStateReady: window.authStateReady
+            });
+            
+            // Check if user might be logged in on a different page/tab
+            showError('Please make sure you are logged in. If you just signed in, please refresh the page. You can check your login status by looking for "User signed in: [your email]" in the console.');
             return;
         }
+        
+        console.log('✅ connectCalendar: User confirmed:', user.email);
+        
+        console.log('connectCalendar: ✅ User confirmed, proceeding with connection');
+        
+        console.log('connectCalendar: User confirmed', {
+            email: user.email,
+            uid: user.uid,
+            providerData: user.providerData?.map(p => p.providerId)
+        });
         
         if (type === 'google') {
             // Check if user signed in with Google
@@ -554,75 +683,10 @@ window.connectCalendar = async function(type) {
                 console.log('API response received:', response);
             
                 if (response && response.data && response.data.authUrl) {
-                    console.log('Opening OAuth popup with URL:', response.data.authUrl);
-                    // Open OAuth popup
-                    const popup = window.open(
-                        response.data.authUrl,
-                        'Google Calendar Auth',
-                        'width=600,height=700,scrollbars=yes,resizable=yes'
-                    );
-                    
-                    if (!popup) {
-                        hideLoading();
-                        showError('Popup blocked. Please allow popups for this site and try again.');
-                        return;
-                    }
-                    
-                    console.log('Popup opened successfully');
-                    
-                    // Set a timeout to hide loading if nothing happens after 5 minutes
-                    const timeoutId = setTimeout(() => {
-                        console.warn('OAuth flow timeout - hiding loading overlay');
-                        hideLoading();
-                        window.removeEventListener('message', messageListener);
-                        clearInterval(checkClosed);
-                        if (!popup.closed) {
-                            popup.close();
-                        }
-                        showError('Connection timed out. Please try again.');
-                    }, 5 * 60 * 1000); // 5 minutes
-                    
-                    // Listen for OAuth callback via postMessage
-                    const messageListener = (event) => {
-                        console.log('Received postMessage:', event.data);
-                        if (event.data && event.data.type === 'calendar_connected' && event.data.provider === 'google') {
-                            console.log('Calendar connected via postMessage');
-                            window.removeEventListener('message', messageListener);
-                            clearInterval(checkClosed);
-                            clearTimeout(timeoutId);
-                            hideLoading();
-                            if (!popup.closed) {
-                                popup.close();
-                            }
-                            showSuccess('Google Calendar connected successfully!');
-                            loadConnectedCalendars();
-                            loadCalendarEvents();
-                        }
-                    };
-                    window.addEventListener('message', messageListener);
-                    
-                    // Also check if popup closed (fallback)
-                    const checkClosed = setInterval(() => {
-                        if (popup.closed) {
-                            console.log('Popup closed, checking connection status...');
-                            clearInterval(checkClosed);
-                            clearTimeout(timeoutId);
-                            window.removeEventListener('message', messageListener);
-                            hideLoading();
-                            // Check if connection was successful
-                            setTimeout(async () => {
-                                await loadConnectedCalendars();
-                                const hasGoogle = connectedCalendars.some(c => c.type === 'google');
-                                if (hasGoogle) {
-                                    showSuccess('Google Calendar connected successfully!');
-                                    await loadCalendarEvents();
-                                } else {
-                                    console.log('Connection not found after popup closed');
-                                    // Don't show error - user might have cancelled
-                                }
-                            }, 1000);
-                        }
-                    }, 1000);
+                    console.log('Redirecting to Google OAuth:', response.data.authUrl);
+                    // Use redirect instead of popup (more reliable, no popup blocker issues)
+                    sessionStorage.setItem('oauth_return_url', window.location.href);
+                    window.location.href = response.data.authUrl;
                 } else {
                     hideLoading();
                     console.error('Invalid response from API:', response);
@@ -710,19 +774,126 @@ window.connectCalendar = async function(type) {
     }
 }
 
+// Add demo events for testing when no real events are available
+function addDemoEvents() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const day = today.getDate();
+    
+    // Helper to create date string
+    const dateStr = (d) => {
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        const dd = d.getDate();
+        return `${y}-${String(m).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+    };
+    
+    // Demo events for today
+    const todayStr = dateStr(today);
+    calendarEvents[todayStr] = [
+        {
+            id: 'demo-1',
+            title: 'Team Standup',
+            start: `${todayStr}T09:00:00`,
+            end: `${todayStr}T09:30:00`,
+            calendarType: 'google',
+            calendarName: 'Work Calendar'
+        },
+        {
+            id: 'demo-2',
+            title: 'Project Review Meeting',
+            start: `${todayStr}T14:00:00`,
+            end: `${todayStr}T15:00:00`,
+            calendarType: 'google',
+            calendarName: 'Work Calendar'
+        },
+        {
+            id: 'demo-3',
+            title: 'Gym Session',
+            start: `${todayStr}T17:30:00`,
+            end: `${todayStr}T18:30:00`,
+            calendarType: 'zeitline',
+            calendarName: 'Zeitline'
+        }
+    ];
+    
+    // Demo events for tomorrow
+    const tomorrow = new Date(year, month, day + 1);
+    const tomorrowStr = dateStr(tomorrow);
+    calendarEvents[tomorrowStr] = [
+        {
+            id: 'demo-4',
+            title: 'Doctor Appointment',
+            start: `${tomorrowStr}T10:00:00`,
+            end: `${tomorrowStr}T11:00:00`,
+            calendarType: 'google',
+            calendarName: 'Personal'
+        },
+        {
+            id: 'demo-5',
+            title: 'Lunch with Sarah',
+            start: `${tomorrowStr}T12:30:00`,
+            end: `${tomorrowStr}T13:30:00`,
+            calendarType: 'zeitline',
+            calendarName: 'Zeitline'
+        }
+    ];
+    
+    // Demo all-day event for day after tomorrow
+    const dayAfter = new Date(year, month, day + 2);
+    const dayAfterStr = dateStr(dayAfter);
+    calendarEvents[dayAfterStr] = [
+        {
+            id: 'demo-6',
+            title: 'Conference Day',
+            start: dayAfterStr, // All-day event (no time component)
+            end: dayAfterStr,
+            calendarType: 'outlook',
+            calendarName: 'Work'
+        },
+        {
+            id: 'demo-7',
+            title: 'Keynote Session',
+            start: `${dayAfterStr}T09:00:00`,
+            end: `${dayAfterStr}T10:30:00`,
+            calendarType: 'outlook',
+            calendarName: 'Work'
+        }
+    ];
+    
+    console.log('✅ Added demo events for testing:', Object.keys(calendarEvents).length, 'days');
+}
+
+// Load events from local JSON file first, then fall back to API
+async function loadEventsFromJSON() {
+    try {
+        const response = await fetch('/data/calendar-events.json');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        console.log('✅ Loaded events from local JSON file:', data.events?.length || 0, 'events');
+        return data.events || [];
+    } catch (error) {
+        console.warn('⚠️ Could not load local JSON events:', error.message);
+        return null; // Return null to indicate fallback needed
+    }
+}
+
 async function loadCalendarEvents() {
     try {
         let startDate, endDate;
         
         if (currentView === 'day' && selectedDate) {
-            // Load single day
-            startDate = new Date(selectedDate);
+            // Load single day - use 'T00:00:00' to parse as local time, not UTC
+            startDate = new Date(selectedDate + 'T00:00:00');
             startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(selectedDate);
+            endDate = new Date(selectedDate + 'T00:00:00');
             endDate.setHours(23, 59, 59, 999);
         } else if (currentView === 'week') {
-            // Load week
-            const date = selectedDate ? new Date(selectedDate) : new Date();
+            // Load week - use 'T00:00:00' to parse as local time, not UTC
+            const date = selectedDate ? new Date(selectedDate + 'T00:00:00') : new Date();
             const dayOfWeek = date.getDay();
             startDate = new Date(date);
             startDate.setDate(date.getDate() - dayOfWeek);
@@ -739,41 +910,55 @@ async function loadCalendarEvents() {
             endDate.setHours(23, 59, 59, 999);
         }
         
-        // Load calendar events from connected calendars
+        // Load calendar events - first try local JSON, then fall back to API
         console.log(`Loading events from ${startDate.toISOString()} to ${endDate.toISOString()}`);
         
         let events = [];
-        try {
-            const response = await apiCall(`/calendars/events?start=${startDate.toISOString()}&end=${endDate.toISOString()}`);
-            
-            // Check if response has data
-            if (response && response.data) {
-                events = Array.isArray(response.data) ? response.data : [];
-            } else if (response && response.success && response.data) {
-                events = Array.isArray(response.data) ? response.data : [];
-            } else {
-                console.warn('⚠️ API response format unexpected:', response);
-                events = [];
+        
+        // First, try to load from local JSON file
+        const jsonEvents = await loadEventsFromJSON();
+        if (jsonEvents && jsonEvents.length > 0) {
+            // Filter events to the date range we need
+            events = jsonEvents.filter(event => {
+                const eventDate = new Date(event.start);
+                return eventDate >= startDate && eventDate <= endDate;
+            });
+            console.log(`✅ Using ${events.length} events from local JSON (filtered from ${jsonEvents.length} total)`);
+        }
+        
+        // If no local events, try API
+        if (events.length === 0) {
+            try {
+                const response = await apiCall(`/calendars/events?start=${startDate.toISOString()}&end=${endDate.toISOString()}`);
+                
+                // Check if response has data
+                if (response && response.data) {
+                    events = Array.isArray(response.data) ? response.data : [];
+                } else if (response && response.success && response.data) {
+                    events = Array.isArray(response.data) ? response.data : [];
+                } else {
+                    console.warn('⚠️ API response format unexpected:', response);
+                    events = [];
+                }
+                
+                console.log(`✅ Received ${events.length} events from API`);
+                if (events.length > 0) {
+                    console.log('Sample events:', events.slice(0, 3).map(e => ({
+                        title: e.title,
+                        start: e.start,
+                        calendarType: e.calendarType
+                    })));
+                } else {
+                    console.warn('⚠️ No events returned from API. Check:');
+                    console.warn('  1. Is Google Calendar connected?');
+                    console.warn('  2. Are calendars selected in settings?');
+                    console.warn('  3. Are there events in the date range?');
+                }
+            } catch (apiError) {
+                console.error('❌ Error loading calendar events from API:', apiError);
+                console.error('Error details:', apiError.message || apiError);
+                // Don't break - continue with empty events array
             }
-            
-            console.log(`✅ Received ${events.length} events from API`);
-            if (events.length > 0) {
-                console.log('Sample events:', events.slice(0, 3).map(e => ({
-                    title: e.title,
-                    start: e.start,
-                    calendarType: e.calendarType
-                })));
-            } else {
-                console.warn('⚠️ No events returned from API. Check:');
-                console.warn('  1. Is Google Calendar connected?');
-                console.warn('  2. Are calendars selected in settings?');
-                console.warn('  3. Are there events in the date range?');
-            }
-        } catch (apiError) {
-            console.error('❌ Error loading calendar events from API:', apiError);
-            console.error('Error details:', apiError.message || apiError);
-            // Don't break - continue with empty events array
-            events = [];
         }
         
         calendarEvents = {};
@@ -811,7 +996,7 @@ async function loadCalendarEvents() {
                 sample: calendarEvents[date][0]?.title
             })));
         } else {
-            console.warn('⚠️ No events found! Check if Google Calendar is connected and has events.');
+            console.warn('⚠️ No events found for this date range.');
         }
         
         // DISABLED: Activity data loading from Firestore
@@ -1231,26 +1416,39 @@ function renderWeekView() {
                      onclick="handleTimeSlotClick(event, '${dateStr}')"
                      data-date="${dateStr}">`;
         
-        // Render events positioned by time
-        dayEvents.forEach(event => {
-            // Parse event times - handle both date-time and date-only formats
+        // Separate all-day events from timed events
+        const allDayEvents = dayEvents.filter(e => !e.start.includes('T'));
+        const timedEvents = dayEvents.filter(e => e.start.includes('T'));
+        
+        // Render all-day events at the top
+        if (allDayEvents.length > 0) {
+            html += `<div class="all-day-events-section">`;
+            allDayEvents.forEach(event => {
+                const calendarType = event.calendarType || 'zeitline';
+                html += `
+                    <div class="all-day-event ${calendarType}" 
+                         onclick="openEventModal('${event.id}', event)"
+                         title="${event.title}">
+                        ${event.title}
+                    </div>
+                `;
+            });
+            html += `</div>`;
+        }
+        
+        // Render timed events positioned by time
+        timedEvents.forEach(event => {
+            // Parse event times - handle date-time formats
             let eventStart, eventEnd;
             
-            if (event.start.includes('T')) {
-                // Date-time format - convert to selected timezone
-                // Google Calendar API returns ISO 8601 strings with timezone info
-                // Convert to user's selected timezone for display
-                eventStart = convertEventTimeToTimezone(event.start, selectedTimezone);
-                eventEnd = convertEventTimeToTimezone(event.end, selectedTimezone);
-                
-                // Validate the date was parsed correctly
-                if (isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
-                    console.error(`Invalid date for event "${event.title}":`, event.start, event.end);
-                    return; // Skip invalid events
-                }
-            } else {
-                // Date-only format (all-day event) - skip positioning
-                return; // Skip all-day events in time-based view
+            // Date-time format - convert to selected timezone
+            eventStart = convertEventTimeToTimezone(event.start, selectedTimezone);
+            eventEnd = convertEventTimeToTimezone(event.end, selectedTimezone);
+            
+            // Validate the date was parsed correctly
+            if (isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
+                console.error(`Invalid date for event "${event.title}":`, event.start, event.end);
+                return; // Skip invalid events
             }
             
             // Get time components in selected timezone (already converted above)
@@ -1262,32 +1460,12 @@ function renderWeekView() {
             // Calculate position (minutes from midnight in local time)
             const startMinutes = startHours * 60 + startMins;
             const endMinutes = endHours * 60 + endMins;
-            const duration = endMinutes - startMinutes;
+            let duration = endMinutes - startMinutes;
             
             // Handle events that span midnight or have invalid duration
             if (duration < 0) {
                 // Event might span midnight, use minimum duration
                 duration = 30; // Default to 30 minutes
-            }
-            
-            // Debug: Log event time and calculated position (only for first few events to avoid spam)
-            if (dayEvents.indexOf(event) < 5) {
-                const localTimeString = eventStart.toLocaleString('en-US', {
-                    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                    hour: 'numeric',
-                    minute: '2-digit',
-                    hour12: true
-                });
-                console.log(`Event "${event.title.substring(0, 30)}":`, {
-                    originalISO: event.start,
-                    parsedLocal: eventStart.toString(),
-                    localTime: localTimeString,
-                    hours: startHours,
-                    minutes: startMins,
-                    calculatedPosition: `${topPixels}px (${topPercent.toFixed(1)}%)`,
-                    timezoneOffset: eventStart.getTimezoneOffset(),
-                    browserTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
-                });
             }
             
             // Calculate position in pixels for exact alignment with time column
@@ -1359,9 +1537,6 @@ function renderWeekView() {
     
     grid.innerHTML = html;
     
-    // Add click handlers to time slots for quick event creation
-    setupTimeSlotClickHandlers();
-    
     // Add current time indicator for today
     const today = new Date();
     const todayYear = today.getFullYear();
@@ -1377,7 +1552,19 @@ function renderWeekView() {
     });
     if (todayIndex >= 0) {
         const now = new Date();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        // Get hours and minutes in the selected timezone
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: selectedTimezone,
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: false
+        });
+        const parts = formatter.formatToParts(now);
+        const hourPart = parts.find(p => p.type === 'hour');
+        const minutePart = parts.find(p => p.type === 'minute');
+        const currentHours = parseInt(hourPart?.value || '0', 10);
+        const currentMins = parseInt(minutePart?.value || '0', 10);
+        const currentMinutes = currentHours * 60 + currentMins;
         const topPercent = (currentMinutes / 1440) * 100;
         const dayCell = grid.children[todayIndex];
         if (dayCell) {
@@ -1478,26 +1665,39 @@ function renderDayView() {
                  onclick="handleTimeSlotClick(event, '${dateStr}')"
                  data-date="${dateStr}">`;
     
-    // Render events positioned by time
-    dayEvents.forEach(event => {
-        // Parse event times - handle both date-time and date-only formats
+    // Separate all-day events from timed events
+    const allDayEvents = dayEvents.filter(e => !e.start.includes('T'));
+    const timedEvents = dayEvents.filter(e => e.start.includes('T'));
+    
+    // Render all-day events at the top
+    if (allDayEvents.length > 0) {
+        html += `<div class="all-day-events-section">`;
+        allDayEvents.forEach(event => {
+            const calendarType = event.calendarType || 'zeitline';
+            html += `
+                <div class="all-day-event ${calendarType}" 
+                     onclick="openEventModal('${event.id}', event)"
+                     title="${event.title}">
+                    ${event.title}
+                </div>
+            `;
+        });
+        html += `</div>`;
+    }
+    
+    // Render timed events positioned by time
+    timedEvents.forEach(event => {
+        // Parse event times - handle date-time formats
         let eventStart, eventEnd;
         
-        if (event.start.includes('T')) {
-            // Date-time format - convert to selected timezone
-            // Google Calendar API returns ISO 8601 strings with timezone info
-            // Convert to user's selected timezone for display
-            eventStart = convertEventTimeToTimezone(event.start, selectedTimezone);
-            eventEnd = convertEventTimeToTimezone(event.end, selectedTimezone);
-            
-            // Validate the date was parsed correctly
-            if (isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
-                console.error(`Invalid date for event "${event.title}":`, event.start, event.end);
-                return; // Skip invalid events
-            }
-        } else {
-            // Date-only format (all-day event) - skip positioning
-            return; // Skip all-day events in time-based view
+        // Date-time format - convert to selected timezone
+        eventStart = convertEventTimeToTimezone(event.start, selectedTimezone);
+        eventEnd = convertEventTimeToTimezone(event.end, selectedTimezone);
+        
+        // Validate the date was parsed correctly
+        if (isNaN(eventStart.getTime()) || isNaN(eventEnd.getTime())) {
+            console.error(`Invalid date for event "${event.title}":`, event.start, event.end);
+            return; // Skip invalid events
         }
         
         // Get time components in selected timezone (already converted above)
@@ -1548,7 +1748,6 @@ function renderDayView() {
                 browserTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone
             });
         }
-        });
         
         const calendarType = event.calendarType || (event.calendarSources && event.calendarSources.length > 1 ? 'multiple' : 'zeitline');
         const calendarName = event.calendarSources && event.calendarSources.length > 1 
@@ -1601,7 +1800,19 @@ function renderDayView() {
     // Add current time indicator for today
     if (isToday) {
         const now = new Date();
-        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        // Get hours and minutes in the selected timezone
+        const formatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: selectedTimezone,
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: false
+        });
+        const parts = formatter.formatToParts(now);
+        const hourPart = parts.find(p => p.type === 'hour');
+        const minutePart = parts.find(p => p.type === 'minute');
+        const currentHours = parseInt(hourPart?.value || '0', 10);
+        const currentMins = parseInt(minutePart?.value || '0', 10);
+        const currentMinutes = currentHours * 60 + currentMins;
         const topPercent = (currentMinutes / 1440) * 100;
         const dayCell = grid.children[dayOfWeek];
         if (dayCell) {
@@ -1829,7 +2040,7 @@ function deleteEvent() {
     
     if (confirm(`Are you sure you want to delete "${currentEventData.title}"?`)) {
         // TODO: Implement event deletion via API
-        showError('Event deletion coming soon');
+    showError('Event deletion coming soon');
         // For now, just close the modal
         // closeEventModal();
     }
@@ -2126,49 +2337,12 @@ async function connectGoogleCalendar() {
         });
         
         if (response.data && response.data.authUrl) {
-            // Open OAuth popup
-            const popup = window.open(
-                response.data.authUrl,
-                'Google Calendar Auth',
-                'width=600,height=700,scrollbars=yes,resizable=yes'
-            );
+            // Use redirect instead of popup (more reliable, no popup blocker issues)
+            // Store current page to return after OAuth
+            sessionStorage.setItem('oauth_return_url', window.location.href);
             
-            if (!popup) {
-                hideLoading();
-                showError('Popup blocked. Please allow popups for this site and try again.');
-                return;
-            }
-            
-            // Listen for OAuth callback via postMessage
-            const messageListener = (event) => {
-                if (event.data && event.data.type === 'calendar_connected' && event.data.provider === 'google') {
-                    window.removeEventListener('message', messageListener);
-                    clearInterval(checkClosed);
-                    hideLoading();
-                    popup.close();
-                    showSuccess('Google Calendar connected successfully!');
-                    loadConnectedCalendars();
-                    loadCalendarEvents();
-                }
-            };
-            window.addEventListener('message', messageListener);
-            
-            // Also check if popup closed (fallback)
-            const checkClosed = setInterval(() => {
-                if (popup.closed) {
-                    clearInterval(checkClosed);
-                    window.removeEventListener('message', messageListener);
-                    hideLoading();
-                    setTimeout(async () => {
-                        await loadConnectedCalendars();
-                        const hasGoogle = connectedCalendars.some(c => c.type === 'google');
-                        if (hasGoogle) {
-                            showSuccess('Google Calendar connected successfully!');
-                            await loadCalendarEvents();
-                        }
-                    }, 1000);
-                }
-            }, 1000);
+            // Redirect to Google OAuth
+            window.location.href = response.data.authUrl;
         } else {
             hideLoading();
             showError('Failed to get authorization URL. Please try again.');
@@ -2304,8 +2478,6 @@ window.toggleAIAssistant = function() {
         if (panel.classList.contains('active')) {
             document.getElementById('aiAssistantInput')?.focus();
         }
-    } else {
-        console.warn('AI Assistant panel not found in DOM');
     }
 };
 
@@ -2323,10 +2495,7 @@ window.sendAIMessage = async function(messageText) {
     const messagesContainer = document.getElementById('aiAssistantMessages');
     const sendBtn = document.getElementById('aiAssistantSendBtn');
     
-    if (!messagesContainer) {
-        console.warn('AI Assistant messages container not found');
-        return;
-    }
+    if (!messagesContainer) return;
     
     // Get message text
     const message = messageText || (input?.value?.trim() || '');
@@ -2617,6 +2786,31 @@ window.createRecurringEventFromAI = async function(patternJson, originalMessage)
         showError(error.message || 'Failed to create recurring event');
     } finally {
         hideLoading();
+    }
+};
+
+// Suggest recurrence when creating/editing events
+window.suggestRecurrence = async function(eventData) {
+    try {
+        const user = firebase.auth().currentUser;
+        if (!user) return null;
+        
+        const response = await apiCall('/ai-assistant/suggest-recurrence', {
+            method: 'POST',
+            body: JSON.stringify({
+                uid: user.uid,
+                event: eventData
+            })
+        });
+        
+        if (response.success && response.suggestion.shouldRecur) {
+            return response.suggestion;
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('Error getting recurrence suggestion:', error);
+        return null;
     }
 };
 

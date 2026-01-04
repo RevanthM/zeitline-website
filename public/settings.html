@@ -170,6 +170,15 @@
             background: var(--accent-tertiary);
             color: var(--bg-primary);
         }
+        
+        .dev-settings {
+            border-color: #f59e0b;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.05), rgba(245, 158, 11, 0.02));
+        }
+        
+        .dev-settings h2 {
+            color: #f59e0b;
+        }
     </style>
 </head>
 <body>
@@ -253,6 +262,54 @@
             </div>
         </div>
         
+        <!-- Calendar Integrations Section -->
+        <div class="settings-section">
+            <h2>📅 Calendar Integrations</h2>
+            
+            <div class="settings-row">
+                <div class="setting-info">
+                    <h3>
+                        <svg width="20" height="20" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 0.5rem;">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        Google Calendar
+                    </h3>
+                    <p id="googleCalendarStatus">Sync your events from Google Calendar</p>
+                </div>
+                <button class="btn btn-secondary" id="googleCalendarBtn" onclick="handleGoogleCalendarConnect()">
+                    Connect
+                </button>
+            </div>
+            
+            <div class="settings-row">
+                <div class="setting-info">
+                    <h3>
+                        <svg width="20" height="20" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 0.5rem;">
+                            <path fill="#FF3B30" d="M19 4h-1V3c0-.55-.45-1-1-1s-1 .45-1 1v1H8V3c0-.55-.45-1-1-1s-1 .45-1 1v1H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
+                        </svg>
+                        Apple Calendar
+                    </h3>
+                    <p id="appleCalendarStatus">Sync your events from iCloud Calendar</p>
+                </div>
+                <button class="btn btn-secondary" id="appleCalendarBtn" onclick="handleAppleCalendarConnect()">
+                    Connect
+                </button>
+            </div>
+            
+            <div id="calendarSyncInfo" style="display: none; margin-top: 1rem; padding: 1rem; background: var(--bg-elevated); border-radius: 12px;">
+                <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    <strong>Connected Calendars</strong>
+                </p>
+                <div id="connectedCalendarsList"></div>
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.75rem;">
+                    Last synced: <span id="lastSyncTime">Never</span>
+                </p>
+            </div>
+        </div>
+        
         <!-- Preferences Section -->
         <div class="settings-section">
             <h2>⚙️ Preferences</h2>
@@ -286,6 +343,42 @@
                 <button class="btn btn-danger" onclick="handleDeleteAccount()">Delete Account</button>
             </div>
         </div>
+        
+        <!-- Developer Settings (localhost only) -->
+        <div class="settings-section dev-settings" id="devSettings" style="display: none;">
+            <h2>🛠️ Developer Settings</h2>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+                These options are only visible on localhost for testing purposes.
+            </p>
+            
+            <div class="settings-row">
+                <div class="setting-info">
+                    <h3>Reset Onboarding</h3>
+                    <p>Clear onboarding status and restart the onboarding flow</p>
+                </div>
+                <button class="btn btn-secondary" onclick="resetOnboarding()">Reset Onboarding</button>
+            </div>
+            
+            <div class="settings-row">
+                <div class="setting-info">
+                    <h3>Clear All Local Data</h3>
+                    <p>Remove all Zeitline data from localStorage</p>
+                </div>
+                <button class="btn btn-secondary" onclick="clearAllLocalData()">Clear Data</button>
+            </div>
+            
+            <div class="settings-row">
+                <div class="setting-info">
+                    <h3>View Local Storage</h3>
+                    <p>Inspect the current localStorage data</p>
+                </div>
+                <button class="btn btn-ghost" onclick="toggleLocalStorageView()">View Data</button>
+            </div>
+            
+            <div id="localStoragePreview" style="display: none; margin-top: 1rem;">
+                <pre style="background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 1rem; font-size: 0.75rem; overflow: auto; max-height: 300px; color: var(--text-secondary);"></pre>
+            </div>
+        </div>
     </div>
     
     <!-- Firebase SDK -->
@@ -293,10 +386,18 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="/js/firebase-config.js?v=2.0"></script>
     <script>
-        function loadSettings(profile) {
-            // Update UI with profile data
-            if (profile?.personal?.fullName) {
-                document.getElementById('userName').textContent = profile.personal.fullName;
+        function loadSettings(profile, firebaseUser = null) {
+            // Get values from profile or Firebase user
+            const fullName = profile?.personal?.fullName || (firebaseUser?.displayName) || null;
+            const email = profile?.personal?.email || (firebaseUser?.email) || null;
+            
+            // Update UI with user data
+            if (fullName) {
+                document.getElementById('userName').textContent = fullName;
+            }
+            
+            if (email) {
+                document.getElementById('userEmail').textContent = email;
             }
             
             if (profile?.personal?.timezone) {
@@ -330,7 +431,7 @@
             const savedProfile = localStorage.getItem('zeitline_profile');
             if (savedProfile) {
                 try {
-                    loadSettings(JSON.parse(savedProfile));
+                    loadSettings(JSON.parse(savedProfile), null);
                 } catch (e) {
                     console.log('Could not load saved profile');
                 }
@@ -340,15 +441,18 @@
             window.addEventListener('authStateChanged', async (e) => {
                 const user = e.detail;
                 if (user) {
-                    document.getElementById('userEmail').textContent = user.email;
+                    // Load from local profile first, using Firebase user as fallback
+                    const localProfile = localStorage.getItem('zeitline_profile');
+                    const profile = localProfile ? JSON.parse(localProfile) : {};
+                    loadSettings(profile, user);
                     
                     try {
                         const response = await apiCall('/users/profile');
                         if (response.data) {
-                            loadSettings(response.data);
+                            loadSettings(response.data, user);
                         }
                     } catch (error) {
-                        console.log('Could not load profile from API');
+                        console.log('Could not load profile from API, using local data');
                     }
                 }
             });
@@ -411,6 +515,297 @@
             alert('🎉 Welcome to Pro! Your account has been upgraded.');
             window.history.replaceState({}, document.title, '/settings.html');
         }
+        
+        // Calendar Integration Functions
+        function initCalendarSettings() {
+            const profile = localStorage.getItem('zeitline_profile');
+            if (profile) {
+                try {
+                    const data = JSON.parse(profile);
+                    const integrations = data.integrations || {};
+                    
+                    // Update Google Calendar UI
+                    if (integrations.googleCalendar?.connected) {
+                        updateCalendarButton('google', true, integrations.googleCalendar);
+                    }
+                    
+                    // Update Apple Calendar UI
+                    if (integrations.appleCalendar?.connected) {
+                        updateCalendarButton('apple', true, integrations.appleCalendar);
+                    }
+                    
+                    // Show sync info if any calendar is connected
+                    if (integrations.googleCalendar?.connected || integrations.appleCalendar?.connected) {
+                        updateSyncInfo(integrations);
+                    }
+                } catch (e) {
+                    console.error('Error loading calendar settings:', e);
+                }
+            }
+        }
+        
+        function updateCalendarButton(type, connected, calendarData) {
+            const btn = document.getElementById(`${type}CalendarBtn`);
+            const status = document.getElementById(`${type}CalendarStatus`);
+            
+            if (connected) {
+                btn.textContent = 'Disconnect';
+                btn.className = 'btn btn-ghost';
+                btn.style.color = 'var(--accent-tertiary)';
+                
+                const email = calendarData?.email || calendarData?.account || '';
+                status.innerHTML = `<span style="color: var(--accent-secondary);">✓ Connected</span>${email ? ` • ${email}` : ''}`;
+            } else {
+                btn.textContent = 'Connect';
+                btn.className = 'btn btn-secondary';
+                btn.style.color = '';
+                
+                status.textContent = type === 'google' 
+                    ? 'Sync your events from Google Calendar' 
+                    : 'Sync your events from iCloud Calendar';
+            }
+        }
+        
+        function updateSyncInfo(integrations) {
+            const syncInfo = document.getElementById('calendarSyncInfo');
+            const calendarsList = document.getElementById('connectedCalendarsList');
+            const lastSyncTime = document.getElementById('lastSyncTime');
+            
+            const calendars = [];
+            if (integrations.googleCalendar?.connected) {
+                calendars.push(`<span style="display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 1rem;">
+                    <span style="width: 8px; height: 8px; background: #34A853; border-radius: 50%;"></span>
+                    Google Calendar
+                </span>`);
+            }
+            if (integrations.appleCalendar?.connected) {
+                calendars.push(`<span style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                    <span style="width: 8px; height: 8px; background: #FF3B30; border-radius: 50%;"></span>
+                    Apple Calendar
+                </span>`);
+            }
+            
+            if (calendars.length > 0) {
+                syncInfo.style.display = 'block';
+                calendarsList.innerHTML = calendars.join('');
+                
+                // Get last sync time
+                const lastSync = integrations.lastSync || integrations.googleCalendar?.connectedAt || integrations.appleCalendar?.connectedAt;
+                if (lastSync) {
+                    lastSyncTime.textContent = new Date(lastSync).toLocaleString();
+                }
+            } else {
+                syncInfo.style.display = 'none';
+            }
+        }
+        
+        async function handleGoogleCalendarConnect() {
+            const profile = localStorage.getItem('zeitline_profile');
+            const data = profile ? JSON.parse(profile) : {};
+            const integrations = data.integrations || {};
+            
+            // Check if already connected
+            if (integrations.googleCalendar?.connected) {
+                if (confirm('Disconnect Google Calendar? Your calendar events will no longer sync.')) {
+                    delete integrations.googleCalendar;
+                    data.integrations = integrations;
+                    localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                    
+                    updateCalendarButton('google', false, null);
+                    updateSyncInfo(integrations);
+                    showSuccess('Google Calendar disconnected');
+                }
+                return;
+            }
+            
+            // Simulate OAuth flow (in production, this would redirect to Google OAuth)
+            showLoading('Connecting to Google Calendar...');
+            
+            try {
+                // In production: window.location.href = '/api/auth/google-calendar';
+                // For demo, we'll simulate the connection
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                // Get user email from Firebase if available
+                const userEmail = currentUser?.email || 'user@gmail.com';
+                
+                integrations.googleCalendar = {
+                    connected: true,
+                    email: userEmail,
+                    connectedAt: new Date().toISOString(),
+                    scopes: ['calendar.readonly', 'calendar.events.readonly']
+                };
+                integrations.lastSync = new Date().toISOString();
+                
+                data.integrations = integrations;
+                localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                
+                hideLoading();
+                updateCalendarButton('google', true, integrations.googleCalendar);
+                updateSyncInfo(integrations);
+                showSuccess('Google Calendar connected successfully!');
+                
+            } catch (error) {
+                hideLoading();
+                console.error('Google Calendar connection error:', error);
+                showError('Failed to connect Google Calendar');
+            }
+        }
+        
+        async function handleAppleCalendarConnect() {
+            const profile = localStorage.getItem('zeitline_profile');
+            const data = profile ? JSON.parse(profile) : {};
+            const integrations = data.integrations || {};
+            
+            // Check if already connected
+            if (integrations.appleCalendar?.connected) {
+                if (confirm('Disconnect Apple Calendar? Your calendar events will no longer sync.')) {
+                    delete integrations.appleCalendar;
+                    data.integrations = integrations;
+                    localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                    
+                    updateCalendarButton('apple', false, null);
+                    updateSyncInfo(integrations);
+                    showSuccess('Apple Calendar disconnected');
+                }
+                return;
+            }
+            
+            // Show Apple Calendar connection modal
+            const appleId = prompt('Enter your Apple ID email to connect iCloud Calendar:\n\n(In production, this would use Sign in with Apple)');
+            
+            if (!appleId) return;
+            
+            showLoading('Connecting to Apple Calendar...');
+            
+            try {
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                integrations.appleCalendar = {
+                    connected: true,
+                    account: appleId,
+                    connectedAt: new Date().toISOString(),
+                    method: 'caldav'
+                };
+                integrations.lastSync = new Date().toISOString();
+                
+                data.integrations = integrations;
+                localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                
+                hideLoading();
+                updateCalendarButton('apple', true, integrations.appleCalendar);
+                updateSyncInfo(integrations);
+                showSuccess('Apple Calendar connected successfully!');
+                
+            } catch (error) {
+                hideLoading();
+                console.error('Apple Calendar connection error:', error);
+                showError('Failed to connect Apple Calendar');
+            }
+        }
+        
+        function showError(message) {
+            const existing = document.querySelector('.error-toast');
+            if (existing) existing.remove();
+            
+            const toast = document.createElement('div');
+            toast.className = 'error-toast';
+            toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()">×</button>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Initialize calendar settings on load
+        initCalendarSettings();
+        
+        // Developer Settings (localhost only)
+        function initDevSettings() {
+            const isLocalhost = window.location.hostname === 'localhost' || 
+                               window.location.hostname === '127.0.0.1' ||
+                               window.location.hostname === '';
+            
+            const devSettings = document.getElementById('devSettings');
+            if (devSettings && isLocalhost) {
+                devSettings.style.display = 'block';
+            }
+        }
+        
+        function resetOnboarding() {
+            if (confirm('This will reset your onboarding status. You will be redirected to the onboarding flow. Continue?')) {
+                localStorage.removeItem('zeitline_onboarding_complete');
+                
+                // Keep the profile data but mark onboarding as incomplete
+                const profile = localStorage.getItem('zeitline_profile');
+                if (profile) {
+                    try {
+                        const data = JSON.parse(profile);
+                        data.onboardingComplete = false;
+                        localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                    } catch (e) {
+                        console.error('Error updating profile:', e);
+                    }
+                }
+                
+                showSuccess('Onboarding reset! Redirecting...');
+                setTimeout(() => {
+                    window.location.href = '/onboarding.html';
+                }, 1000);
+            }
+        }
+        
+        function clearAllLocalData() {
+            if (confirm('This will clear ALL Zeitline data from localStorage. This cannot be undone. Continue?')) {
+                const keysToRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && key.startsWith('zeitline')) {
+                        keysToRemove.push(key);
+                    }
+                }
+                keysToRemove.forEach(key => localStorage.removeItem(key));
+                localStorage.removeItem('authToken');
+                
+                showSuccess('All local data cleared!');
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1000);
+            }
+        }
+        
+        function toggleLocalStorageView() {
+            const preview = document.getElementById('localStoragePreview');
+            if (preview.style.display === 'none') {
+                const data = {};
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key) {
+                        try {
+                            data[key] = JSON.parse(localStorage.getItem(key));
+                        } catch (e) {
+                            data[key] = localStorage.getItem(key);
+                        }
+                    }
+                }
+                preview.querySelector('pre').textContent = JSON.stringify(data, null, 2);
+                preview.style.display = 'block';
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+        
+        function showSuccess(message) {
+            const existing = document.querySelector('.success-toast');
+            if (existing) existing.remove();
+            
+            const toast = document.createElement('div');
+            toast.className = 'success-toast';
+            toast.innerHTML = `<span>${message}</span><button onclick="this.parentElement.remove()">×</button>`;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+        
+        // Initialize dev settings on load
+        initDevSettings();
     </script>
 </body>
 </html>
