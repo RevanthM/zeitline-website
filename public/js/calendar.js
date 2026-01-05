@@ -2468,14 +2468,35 @@ window.closeAppleModal = closeAppleModal;
 async function connectAppleCalendar(event) {
     event.preventDefault();
     
-    const appleId = document.getElementById('appleId').value;
-    const appPassword = document.getElementById('appPassword').value;
+    console.log('🍎 connectAppleCalendar called');
+    
+    const appleIdInput = document.getElementById('appleId');
+    const appPasswordInput = document.getElementById('appPassword');
     const btn = document.getElementById('appleConnectBtn');
     
+    console.log('🍎 Input elements found:', {
+        appleIdInput: !!appleIdInput,
+        appPasswordInput: !!appPasswordInput,
+        btnFound: !!btn
+    });
+    
+    const appleId = appleIdInput ? appleIdInput.value.trim() : '';
+    const appPassword = appPasswordInput ? appPasswordInput.value.trim() : '';
+    
+    console.log('🍎 Values:', {
+        appleIdLength: appleId.length,
+        appPasswordLength: appPassword.length,
+        appleIdEmpty: !appleId,
+        appPasswordEmpty: !appPassword
+    });
+    
     if (!appleId || !appPassword) {
+        console.error('🍎 Validation failed: missing appleId or appPassword');
         showError('Please enter both Apple ID and app-specific password');
         return;
     }
+    
+    console.log('🍎 Validation passed, proceeding with API call...');
     
     // Disable button and show loading state
     const originalText = btn.textContent;
@@ -2485,10 +2506,15 @@ async function connectAppleCalendar(event) {
     try {
         showLoading('Connecting Apple Calendar via CalDAV...');
         
+        console.log('🍎 Making API call to /calendars/apple/connect');
+        console.log('🍎 Request body:', JSON.stringify({ appleId: appleId.substring(0, 3) + '***', appPasswordLength: appPassword.length }));
+        
         const response = await apiCall('/calendars/apple/connect', {
             method: 'POST',
             body: JSON.stringify({ appleId, appPassword })
         });
+        
+        console.log('🍎 API response:', response);
         
         hideLoading();
         closeAppleModal();
