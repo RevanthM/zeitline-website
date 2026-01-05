@@ -349,3 +349,4 @@ class ActivityManager {
 // Create global instance
 const activityManager = new ActivityManager();
 
+
