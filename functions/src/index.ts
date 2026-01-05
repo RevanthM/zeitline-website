@@ -100,6 +100,8 @@ app.use(
       'http://127.0.0.1:5500',
       'http://localhost:3000',
       'http://127.0.0.1:3000',
+      'https://zeitline.ai',
+      'https://www.zeitline.ai',
       /\.firebaseapp\.com$/,
       /\.web\.app$/
     ],
