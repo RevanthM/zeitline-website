@@ -881,6 +881,85 @@ async function loadEventsFromJSON() {
     }
 }
 
+/**
+ * Deduplicate events on the client side
+ * Events are considered duplicates if they have:
+ * - Same title (case-insensitive, normalized)
+ * - Same start time (within 5 minutes tolerance)
+ */
+function deduplicateEventsClient(events) {
+    if (!events || !Array.isArray(events)) return [];
+    
+    const seen = new Map();
+    const TIME_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+    
+    for (const event of events) {
+        // Normalize title for comparison
+        const normalizedTitle = (event.title || 'No title')
+            .toLowerCase()
+            .trim()
+            .replace(/\s+/g, ' ');
+        
+        const startTime = new Date(event.start).getTime();
+        if (isNaN(startTime)) continue;
+        
+        // Create a key based on normalized title and approximate start time
+        // Round start time to nearest 5 minutes for comparison
+        const roundedStartTime = Math.round(startTime / TIME_TOLERANCE_MS) * TIME_TOLERANCE_MS;
+        const key = `${normalizedTitle}|${roundedStartTime}`;
+        
+        if (seen.has(key)) {
+            // Event is a duplicate - merge calendar sources
+            const existing = seen.get(key);
+            
+            // Initialize calendarSources if not present
+            if (!existing.calendarSources) {
+                existing.calendarSources = [{
+                    type: existing.calendarType,
+                    id: existing.calendarId,
+                    name: existing.calendarName
+                }];
+            }
+            
+            // Add this calendar as a source if not already present
+            const sourceExists = existing.calendarSources.some(
+                s => s.type === event.calendarType && s.id === event.calendarId
+            );
+            
+            if (!sourceExists) {
+                existing.calendarSources.push({
+                    type: event.calendarType,
+                    id: event.calendarId,
+                    name: event.calendarName
+                });
+                
+                // Update calendarType to 'multiple' if from multiple sources
+                if (existing.calendarSources.length > 1) {
+                    existing.calendarType = 'multiple';
+                }
+            }
+            
+            // Use longer description if available
+            if (event.description && event.description.length > (existing.description?.length || 0)) {
+                existing.description = event.description;
+            }
+        } else {
+            // New event - add it
+            const newEvent = {
+                ...event,
+                calendarSources: [{
+                    type: event.calendarType,
+                    id: event.calendarId,
+                    name: event.calendarName
+                }]
+            };
+            seen.set(key, newEvent);
+        }
+    }
+    
+    return Array.from(seen.values());
+}
+
 async function loadCalendarEvents() {
     try {
         let startDate, endDate;
@@ -958,6 +1037,10 @@ async function loadCalendarEvents() {
                 console.log(`📋 Using ${events.length} demo events for preview (filtered from ${jsonEvents.length} total)`);
             }
         }
+        
+        // Deduplicate events on the frontend (in case backend didn't catch all duplicates)
+        events = deduplicateEventsClient(events);
+        console.log(`After deduplication: ${events.length} unique events`);
         
         calendarEvents = {};
         
