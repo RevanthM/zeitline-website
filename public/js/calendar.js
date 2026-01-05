@@ -2353,62 +2353,90 @@ async function connectGoogleCalendar() {
 }
 
 function showAppleCalendarModal() {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay';
-    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(5, 5, 8, 0.9); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 1000;';
-    modal.innerHTML = `
-        <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 24px; padding: 2rem; max-width: 500px; width: 90%; position: relative;">
-            <button onclick="this.closest('.modal-overlay').remove()" style="position: absolute; top: 1rem; right: 1rem; width: 36px; height: 36px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary); border-radius: 50%; cursor: pointer; font-size: 1.25rem;">×</button>
-            <h2 style="font-family: \'Instrument Serif\', Georgia, serif; font-size: 1.5rem; margin-bottom: 1rem;">Connect Apple Calendar</h2>
-            <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.9rem;">Connect your Apple Calendar using CalDAV. You'll need an app-specific password from appleid.apple.com</p>
-            <form onsubmit="connectAppleCalendar(event, this.closest('.modal-overlay'))">
-                <div style="margin-bottom: 1rem;">
-                    <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem;">Apple ID Email</label>
-                    <input type="email" name="email" class="form-input" placeholder="your@email.com" required style="width: 100%; padding: 0.75rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-primary);">
-                </div>
-                <div style="margin-bottom: 1.5rem;">
-                    <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem;">App-Specific Password</label>
-                    <input type="password" name="password" class="form-input" placeholder="xxxx-xxxx-xxxx-xxxx" required style="width: 100%; padding: 0.75rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-primary);">
-                    <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">Generate at <a href="https://appleid.apple.com" target="_blank" style="color: var(--accent-primary);">appleid.apple.com</a></p>
-                </div>
-                <div style="display: flex; gap: 0.75rem;">
-                    <button type="submit" class="btn btn-primary" style="flex: 1;">Connect</button>
-                    <button type="button" onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary">Cancel</button>
-                </div>
-            </form>
-        </div>
-    `;
-    document.body.appendChild(modal);
-    modal.onclick = (e) => {
-        if (e.target === modal) modal.remove();
-    };
+    // Use the HTML modal instead of dynamically creating one
+    const modal = document.getElementById('appleCalendarModal');
+    if (modal) {
+        modal.classList.add('active');
+        // Clear any previous input values
+        const appleIdInput = document.getElementById('appleId');
+        const appPasswordInput = document.getElementById('appPassword');
+        if (appleIdInput) appleIdInput.value = '';
+        if (appPasswordInput) appPasswordInput.value = '';
+    } else {
+        console.error('Apple Calendar modal not found');
+        showError('Apple Calendar connection modal not found. Please refresh the page.');
+    }
 }
 
-async function connectAppleCalendar(event, modal) {
+function closeAppleModal(event) {
+    // If event is provided, check if we clicked on the backdrop
+    if (event && event.target !== event.currentTarget) {
+        return;
+    }
+    const modal = document.getElementById('appleCalendarModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+// Make closeAppleModal globally accessible
+window.closeAppleModal = closeAppleModal;
+
+async function connectAppleCalendar(event) {
     event.preventDefault();
-    const form = event.target;
-    const email = form.querySelector('input[name="email"]').value;
-    const password = form.querySelector('input[name="password"]').value;
+    
+    const appleId = document.getElementById('appleId').value;
+    const appPassword = document.getElementById('appPassword').value;
+    const btn = document.getElementById('appleConnectBtn');
+    
+    if (!appleId || !appPassword) {
+        showError('Please enter both Apple ID and app-specific password');
+        return;
+    }
+    
+    // Disable button and show loading state
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Connecting...';
     
     try {
-        showLoading('Connecting Apple Calendar...');
+        showLoading('Connecting Apple Calendar via CalDAV...');
         
-        await apiCall('/calendars/apple/connect', {
+        const response = await apiCall('/calendars/apple/connect', {
             method: 'POST',
-            body: JSON.stringify({ email, password })
+            body: JSON.stringify({ appleId, appPassword })
         });
         
-        modal.remove();
         hideLoading();
-        showSuccess('Apple Calendar connected successfully!');
-        await loadConnectedCalendars();
-        await loadCalendarEvents();
+        closeAppleModal();
+        
+        if (response.success) {
+            const calendarNames = response.data?.calendars?.join(', ') || 'your calendars';
+            showSuccess(`Apple Calendar connected! Found: ${calendarNames}`);
+            await loadConnectedCalendars();
+            await loadCalendarEvents();
+            renderCalendarConnections();
+        } else {
+            showError(response.error || 'Failed to connect Apple Calendar');
+        }
     } catch (error) {
         hideLoading();
         console.error('Error connecting Apple Calendar:', error);
-        showError(error.message || 'Failed to connect Apple Calendar');
+        
+        // Show specific error messages
+        if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
+            showError('Invalid credentials. Make sure you are using an app-specific password from appleid.apple.com, not your regular Apple ID password.');
+        } else {
+            showError(error.message || 'Failed to connect Apple Calendar. Please check your credentials.');
+        }
+    } finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
     }
 }
+
+// Make connectAppleCalendar globally accessible
+window.connectAppleCalendar = connectAppleCalendar;
 
 // UI helpers
 function showError(message) {

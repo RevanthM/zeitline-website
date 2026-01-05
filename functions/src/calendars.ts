@@ -6,6 +6,11 @@ import { Timestamp } from "firebase-admin/firestore";
 import axios from "axios";
 import * as fs from "fs";
 import * as path from "path";
+import { createDAVClient, DAVCalendar } from "tsdav";
+import * as CryptoJS from "crypto-js";
+
+// Encryption key for storing Apple Calendar credentials
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "zeitline-apple-calendar-key-32!!";
 
 const router = Router();
 const db = admin.firestore();
@@ -620,31 +625,87 @@ router.post("/google/import", verifyAuth, async (req: Request, res: Response) =>
   }
 });
 
+// Encrypt password before storing
+function encryptPassword(text: string): string {
+  return CryptoJS.AES.encrypt(text, ENCRYPTION_KEY).toString();
+}
+
+// Decrypt password when needed
+function decryptPassword(ciphertext: string): string {
+  const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY);
+  return bytes.toString(CryptoJS.enc.Utf8);
+}
+
 /**
  * POST /calendars/apple/connect
- * Connect Apple Calendar via CalDAV
+ * Connect Apple Calendar via CalDAV using tsdav
  */
 router.post("/apple/connect", verifyAuth, async (req: Request, res: Response) => {
   try {
     const uid = req.user!.uid;
-    const { email, password } = req.body;
+    const { appleId, appPassword } = req.body;
 
-    if (!email || !password) {
+    if (!appleId || !appPassword) {
       res.status(400).json({
         success: false,
-        error: "Email and password required",
+        error: "Apple ID and app-specific password are required",
       } as ApiResponse);
       return;
     }
 
-    // Store Apple Calendar credentials (encrypted in production)
+    console.log(`Attempting to connect Apple Calendar for user ${uid}`);
+
+    // Validate credentials by connecting to CalDAV
+    let client;
+    let calendars: DAVCalendar[];
+    
+    try {
+      client = await createDAVClient({
+        serverUrl: "https://caldav.icloud.com",
+        credentials: {
+          username: appleId,
+          password: appPassword,
+        },
+        authMethod: "Basic",
+        defaultAccountType: "caldav",
+      });
+
+      // Fetch calendars to verify connection works
+      calendars = await client.fetchCalendars();
+      console.log(`Found ${calendars.length} calendars for Apple ID ${appleId}`);
+    } catch (authError: any) {
+      console.error("Apple Calendar auth error:", authError);
+      
+      if (authError.message?.includes("401") || authError.message?.includes("Unauthorized")) {
+        res.status(401).json({
+          success: false,
+          error: "Invalid credentials. Make sure you're using an app-specific password from appleid.apple.com",
+        } as ApiResponse);
+        return;
+      }
+      
+      res.status(500).json({
+        success: false,
+        error: `Connection failed: ${authError.message || "Unknown error"}`,
+      } as ApiResponse);
+      return;
+    }
+
+    // Store encrypted credentials
     const calendarData = {
       type: "apple",
-      email,
-      password, // TODO: Encrypt this
-      caldavUrl: `https://caldav.icloud.com/`,
+      appleId: appleId,
+      appPassword: encryptPassword(appPassword), // Encrypted!
+      caldavUrl: "https://caldav.icloud.com",
+      calendars: calendars.map((cal) => ({
+        url: cal.url,
+        displayName: cal.displayName || "Apple Calendar",
+        ctag: cal.ctag,
+        selected: true,
+      })),
       connectedAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
+      lastSync: null,
     };
 
     await db
@@ -654,15 +715,304 @@ router.post("/apple/connect", verifyAuth, async (req: Request, res: Response) =>
       .doc("apple")
       .set(calendarData, { merge: true });
 
+    // Import events in background (don't await)
+    importAppleCalendarEvents(uid, client, calendars).catch((err) => {
+      console.error("Error importing Apple Calendar events:", err);
+    });
+
     res.json({
       success: true,
-      message: "Apple Calendar connected",
+      message: "Apple Calendar connected successfully",
+      data: {
+        calendars: calendars.map((cal) => cal.displayName || "Apple Calendar"),
+      },
     } as ApiResponse);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error connecting Apple Calendar:", error);
     res.status(500).json({
       success: false,
-      error: "Failed to connect Apple Calendar",
+      error: `Failed to connect Apple Calendar: ${error.message || "Unknown error"}`,
+    } as ApiResponse);
+  }
+});
+
+/**
+ * Import events from Apple Calendar using tsdav
+ */
+async function importAppleCalendarEvents(
+  uid: string,
+  client: any,
+  calendars: DAVCalendar[]
+): Promise<void> {
+  try {
+    console.log(`Starting Apple Calendar import for user ${uid}, ${calendars.length} calendars`);
+
+    // Set date range: 1 year ago to 2 years in the future
+    const startDate = new Date();
+    startDate.setFullYear(startDate.getFullYear() - 1);
+    startDate.setHours(0, 0, 0, 0);
+
+    const endDate = new Date();
+    endDate.setFullYear(endDate.getFullYear() + 2);
+    endDate.setHours(23, 59, 59, 999);
+
+    let totalEventsImported = 0;
+
+    for (const calendar of calendars) {
+      try {
+        console.log(`Fetching events from calendar: ${calendar.displayName || calendar.url}`);
+        
+        const calendarObjects = await client.fetchCalendarObjects({
+          calendar,
+          timeRange: {
+            start: startDate.toISOString(),
+            end: endDate.toISOString(),
+          },
+        });
+
+        console.log(`Found ${calendarObjects.length} events in ${calendar.displayName}`);
+
+        // Store events in batches
+        const batchSize = 400;
+        for (let i = 0; i < calendarObjects.length; i += batchSize) {
+          const batch = db.batch();
+          const batchEvents = calendarObjects.slice(i, i + batchSize);
+
+          for (const calObject of batchEvents) {
+            // Parse iCal data
+            const parsed = parseICalData(calObject.data);
+            if (!parsed || !parsed.title || !parsed.start) continue;
+
+            const eventId = `apple_${Buffer.from(calObject.url || parsed.uid || `${Date.now()}`).toString("base64").slice(0, 30)}`;
+            const eventRef = db
+              .collection("users")
+              .doc(uid)
+              .collection("calendar_events")
+              .doc(eventId);
+
+            batch.set(eventRef, {
+              id: parsed.uid || eventId,
+              title: parsed.title,
+              description: parsed.description || "",
+              start: parsed.start,
+              end: parsed.end || parsed.start,
+              location: parsed.location || "",
+              calendarType: "apple",
+              calendarId: calendar.url,
+              calendarName: calendar.displayName || "Apple Calendar",
+              source: "apple",
+              importedAt: new Date().toISOString(),
+              createdAt: Timestamp.now(),
+            });
+
+            totalEventsImported++;
+          }
+
+          await batch.commit();
+        }
+
+        console.log(`Imported events from ${calendar.displayName}`);
+      } catch (calError: any) {
+        console.error(`Error importing from calendar ${calendar.displayName}:`, calError.message);
+      }
+    }
+
+    // Update the calendar connection with import status
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendars")
+      .doc("apple")
+      .update({
+        eventsImported: true,
+        eventsImportedAt: Timestamp.now(),
+        totalEventsImported: totalEventsImported,
+        lastSync: Timestamp.now(),
+        lastImportRange: {
+          start: Timestamp.fromDate(startDate),
+          end: Timestamp.fromDate(endDate),
+        },
+      });
+
+    console.log(`Completed Apple Calendar import for user ${uid}: ${totalEventsImported} total events`);
+  } catch (error: any) {
+    console.error("Error in importAppleCalendarEvents:", error);
+    throw error;
+  }
+}
+
+/**
+ * Parse iCal/ICS data from CalDAV response
+ */
+function parseICalData(icalData: string): any {
+  if (!icalData) return null;
+  
+  try {
+    const event: any = {};
+    const lines = icalData.split(/\r?\n/);
+
+    for (const line of lines) {
+      if (line.startsWith("SUMMARY:")) {
+        event.title = line.substring(8).trim().replace(/\\,/g, ",").replace(/\\n/g, "\n");
+      } else if (line.startsWith("DTSTART")) {
+        event.start = parseICalDateLine(line);
+      } else if (line.startsWith("DTEND")) {
+        event.end = parseICalDateLine(line);
+      } else if (line.startsWith("DESCRIPTION:")) {
+        event.description = line.substring(12).trim().replace(/\\,/g, ",").replace(/\\n/g, "\n");
+      } else if (line.startsWith("LOCATION:")) {
+        event.location = line.substring(9).trim().replace(/\\,/g, ",");
+      } else if (line.startsWith("UID:")) {
+        event.uid = line.substring(4).trim();
+      }
+    }
+
+    return event;
+  } catch (error) {
+    console.error("Error parsing iCal data:", error);
+    return null;
+  }
+}
+
+/**
+ * Parse iCal date line (handles various formats)
+ */
+function parseICalDateLine(line: string): string {
+  // Extract date value after colon
+  const colonIndex = line.indexOf(":");
+  if (colonIndex === -1) return new Date().toISOString();
+  
+  const dateStr = line.substring(colonIndex + 1).trim();
+  
+  // Handle different formats
+  if (dateStr.length === 8) {
+    // Date only: YYYYMMDD (all-day event)
+    const year = dateStr.substring(0, 4);
+    const month = dateStr.substring(4, 6);
+    const day = dateStr.substring(6, 8);
+    return `${year}-${month}-${day}`;
+  } else if (dateStr.length >= 15) {
+    // DateTime: YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ
+    const year = dateStr.substring(0, 4);
+    const month = dateStr.substring(4, 6);
+    const day = dateStr.substring(6, 8);
+    const hour = dateStr.substring(9, 11);
+    const minute = dateStr.substring(11, 13);
+    const second = dateStr.substring(13, 15);
+    const tz = dateStr.includes("Z") ? "Z" : "";
+    return `${year}-${month}-${day}T${hour}:${minute}:${second}${tz}`;
+  }
+  
+  return dateStr;
+}
+
+/**
+ * POST /calendars/apple/sync
+ * Manual sync of Apple Calendar events
+ */
+router.post("/apple/sync", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+
+    // Get stored connection
+    const connectionDoc = await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendars")
+      .doc("apple")
+      .get();
+
+    if (!connectionDoc.exists) {
+      res.status(404).json({
+        success: false,
+        error: "Apple Calendar not connected",
+      } as ApiResponse);
+      return;
+    }
+
+    const data = connectionDoc.data()!;
+    
+    // Decrypt password
+    const appPassword = decryptPassword(data.appPassword);
+    
+    if (!appPassword) {
+      res.status(500).json({
+        success: false,
+        error: "Failed to decrypt stored credentials. Please reconnect.",
+      } as ApiResponse);
+      return;
+    }
+
+    // Connect with stored credentials
+    const client = await createDAVClient({
+      serverUrl: "https://caldav.icloud.com",
+      credentials: {
+        username: data.appleId,
+        password: appPassword,
+      },
+      authMethod: "Basic",
+      defaultAccountType: "caldav",
+    });
+
+    const calendars = await client.fetchCalendars();
+    
+    // Import events in background
+    importAppleCalendarEvents(uid, client, calendars).catch((err) => {
+      console.error("Error syncing Apple Calendar events:", err);
+    });
+
+    res.json({
+      success: true,
+      message: "Apple Calendar sync started",
+    } as ApiResponse);
+  } catch (error: any) {
+    console.error("Error syncing Apple Calendar:", error);
+    res.status(500).json({
+      success: false,
+      error: `Sync failed: ${error.message || "Unknown error"}`,
+    } as ApiResponse);
+  }
+});
+
+/**
+ * DELETE /calendars/apple/disconnect
+ * Disconnect Apple Calendar
+ */
+router.delete("/apple/disconnect", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+
+    // Delete stored connection
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendars")
+      .doc("apple")
+      .delete();
+
+    // Optionally delete imported events
+    const eventsSnapshot = await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendar_events")
+      .where("calendarType", "==", "apple")
+      .get();
+
+    const batch = db.batch();
+    eventsSnapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+
+    res.json({
+      success: true,
+      message: "Apple Calendar disconnected",
+    } as ApiResponse);
+  } catch (error: any) {
+    console.error("Error disconnecting Apple Calendar:", error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to disconnect: ${error.message || "Unknown error"}`,
     } as ApiResponse);
   }
 });

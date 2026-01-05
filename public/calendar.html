@@ -2372,12 +2372,67 @@
         </div>
     </div>
     
+    <!-- Apple Calendar Connection Modal -->
+    <div class="event-detail-modal" id="appleCalendarModal" onclick="closeAppleModal(event)">
+        <div class="event-detail-content" onclick="event.stopPropagation()" style="max-width: 500px;">
+            <div class="event-detail-header">
+                <button class="event-detail-close" onclick="closeAppleModal()" aria-label="Close">×</button>
+                <h2 class="event-detail-title">🍎 Connect Apple Calendar</h2>
+            </div>
+            
+            <div class="event-detail-body">
+                <div class="event-detail-section">
+                    <div class="event-detail-section-title">Step 1: Create an App-Specific Password</div>
+                    <div class="event-detail-section-content">
+                        <ol style="margin: 0; padding-left: 1.25rem; color: var(--text-secondary); line-height: 1.8;">
+                            <li>Go to <a href="https://appleid.apple.com" target="_blank" style="color: var(--accent-primary);">appleid.apple.com</a></li>
+                            <li>Sign in with your Apple ID</li>
+                            <li>Go to <strong>Sign-In and Security</strong> → <strong>App-Specific Passwords</strong></li>
+                            <li>Click <strong>Generate</strong> and name it "Zeitline"</li>
+                            <li>Copy the generated password (format: xxxx-xxxx-xxxx-xxxx)</li>
+                        </ol>
+                    </div>
+                </div>
+                
+                <div class="event-detail-section">
+                    <div class="event-detail-section-title">Step 2: Enter Your Credentials</div>
+                    <div class="event-detail-section-content">
+                        <form id="appleCalendarForm" onsubmit="connectAppleCalendar(event)">
+                            <div style="margin-bottom: 1rem;">
+                                <label for="appleId" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Apple ID (Email)</label>
+                                <input type="email" id="appleId" required placeholder="your@icloud.com" 
+                                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                            </div>
+                            
+                            <div style="margin-bottom: 1rem;">
+                                <label for="appPassword" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">App-Specific Password</label>
+                                <input type="password" id="appPassword" required placeholder="xxxx-xxxx-xxxx-xxxx" 
+                                    style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                            </div>
+                            
+                            <button type="submit" id="appleConnectBtn" class="btn btn-primary" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
+                                Connect Apple Calendar
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 1rem; padding: 0.75rem; background: rgba(201, 255, 87, 0.1); border: 1px solid rgba(201, 255, 87, 0.2); border-radius: 8px;">
+                    <p style="margin: 0; font-size: 0.8125rem; color: var(--text-secondary);">
+                        🔒 <strong>Your password is encrypted</strong> before storage and can be revoked anytime from 
+                        <a href="https://appleid.apple.com" target="_blank" style="color: var(--accent-primary);">appleid.apple.com</a>
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/js/firebase-config.js?v=2.1"></script>
-    <script src="/js/calendar.js?v=6.1"></script>
+    <script src="/js/calendar.js?v=7.0"></script>
 </body>
 </html>
 
