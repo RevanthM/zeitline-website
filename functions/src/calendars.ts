@@ -643,9 +643,26 @@ function decryptPassword(ciphertext: string): string {
 router.post("/apple/connect", verifyAuth, async (req: Request, res: Response) => {
   try {
     const uid = req.user!.uid;
-    const { appleId, appPassword } = req.body;
+    
+    // Debug logging
+    console.log("🍎 Apple Calendar connect request received");
+    console.log("🍎 Request body:", JSON.stringify(req.body));
+    console.log("🍎 Body type:", typeof req.body);
+    console.log("🍎 Body keys:", Object.keys(req.body || {}));
+    
+    // Support both old field names (email, password) and new field names (appleId, appPassword)
+    const appleId = req.body?.appleId || req.body?.email || '';
+    const appPassword = req.body?.appPassword || req.body?.password || '';
+    
+    console.log("🍎 Extracted values:", { 
+      appleIdPresent: !!appleId, 
+      appleIdLength: appleId?.length || 0,
+      appPasswordPresent: !!appPassword,
+      appPasswordLength: appPassword?.length || 0
+    });
 
     if (!appleId || !appPassword) {
+      console.log("🍎 Validation failed - missing appleId or appPassword");
       res.status(400).json({
         success: false,
         error: "Apple ID and app-specific password are required",
