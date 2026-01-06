@@ -644,21 +644,19 @@ router.post("/apple/connect", verifyAuth, async (req: Request, res: Response) =>
   try {
     const uid = req.user!.uid;
     
-    // Debug logging
+    // Debug logging (credentials redacted for security)
     console.log("🍎 Apple Calendar connect request received");
-    console.log("🍎 Request body:", JSON.stringify(req.body));
-    console.log("🍎 Body type:", typeof req.body);
     console.log("🍎 Body keys:", Object.keys(req.body || {}));
+    // Never log passwords or sensitive credentials
     
     // Support both old field names (email, password) and new field names (appleId, appPassword)
     const appleId = req.body?.appleId || req.body?.email || '';
     const appPassword = req.body?.appPassword || req.body?.password || '';
     
-    console.log("🍎 Extracted values:", { 
-      appleIdPresent: !!appleId, 
-      appleIdLength: appleId?.length || 0,
-      appPasswordPresent: !!appPassword,
-      appPasswordLength: appPassword?.length || 0
+    // Log only presence, not actual values (security)
+    console.log("🍎 Credentials received:", { 
+      hasAppleId: !!appleId, 
+      hasPassword: !!appPassword
     });
 
     if (!appleId || !appPassword) {
