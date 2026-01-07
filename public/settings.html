@@ -299,6 +299,21 @@
                 </button>
             </div>
             
+            <div class="settings-row">
+                <div class="setting-info">
+                    <h3>
+                        <svg width="20" height="20" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 0.5rem;">
+                            <path fill="#0078D4" d="M21.5 4h-19C1.67 4 1 4.67 1 5.5v13c0 .83.67 1.5 1.5 1.5h19c.83 0 1.5-.67 1.5-1.5v-13c0-.83-.67-1.5-1.5-1.5zm0 14.5h-19V7.24l9.5 6.26 9.5-6.26v11.26zm-9.5-5.5L2.5 6.75V5.5h19v1.25L12 13z"/>
+                        </svg>
+                        Outlook Calendar
+                    </h3>
+                    <p id="outlookCalendarStatus">Sync your events from Microsoft Outlook</p>
+                </div>
+                <button class="btn btn-secondary" id="outlookCalendarBtn" onclick="handleOutlookCalendarConnect()">
+                    Connect
+                </button>
+            </div>
+            
             <div id="calendarSyncInfo" style="display: none; margin-top: 1rem; padding: 1rem; background: var(--bg-elevated); border-radius: 12px;">
                 <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">
                     <strong>Connected Calendars</strong>
@@ -314,17 +329,36 @@
         <div class="settings-section">
             <h2>⚙️ Preferences</h2>
             
-            <div class="settings-row">
-                <div class="setting-info">
-                    <h3>Timezone</h3>
-                    <p id="userTimezone">America/Los_Angeles</p>
+            <div class="settings-row" style="flex-direction: column; align-items: stretch;">
+                <div class="setting-info" style="margin-bottom: 0.75rem;">
+                    <h3>🕐 Timezone</h3>
+                    <p>Select your timezone to correctly display calendar events</p>
                 </div>
-                <button class="btn btn-ghost" onclick="window.location.href='/onboarding.html'">Change</button>
+                <div style="display: flex; gap: 1rem; align-items: center;">
+                    <select id="timezoneSelect" style="flex: 1; padding: 0.5rem 0.75rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.875rem; cursor: pointer;">
+                        <option value="America/New_York">Eastern Time (ET)</option>
+                        <option value="America/Chicago">Central Time (CT)</option>
+                        <option value="America/Denver">Mountain Time (MT)</option>
+                        <option value="America/Los_Angeles">Pacific Time (PT)</option>
+                        <option value="America/Anchorage">Alaska Time</option>
+                        <option value="Pacific/Honolulu">Hawaii Time</option>
+                        <option value="Europe/London">London (GMT/BST)</option>
+                        <option value="Europe/Paris">Paris (CET)</option>
+                        <option value="Europe/Berlin">Berlin (CET)</option>
+                        <option value="Asia/Tokyo">Tokyo (JST)</option>
+                        <option value="Asia/Shanghai">Shanghai (CST)</option>
+                        <option value="Asia/Kolkata">India (IST)</option>
+                        <option value="Asia/Dubai">Dubai (GST)</option>
+                        <option value="Australia/Sydney">Sydney (AEST)</option>
+                        <option value="Pacific/Auckland">Auckland (NZST)</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="saveTimezone()" style="padding: 0.5rem 1rem;">Save</button>
+                </div>
             </div>
             
             <div class="settings-row">
                 <div class="setting-info">
-                    <h3>Currency</h3>
+                    <h3>💵 Currency</h3>
                     <p id="userCurrency">USD ($)</p>
                 </div>
                 <button class="btn btn-ghost" onclick="window.location.href='/onboarding.html'">Change</button>
@@ -400,8 +434,12 @@
                 document.getElementById('userEmail').textContent = email;
             }
             
+            // Set timezone dropdown value
             if (profile?.personal?.timezone) {
-                document.getElementById('userTimezone').textContent = profile.personal.timezone;
+                const timezoneSelect = document.getElementById('timezoneSelect');
+                if (timezoneSelect) {
+                    timezoneSelect.value = profile.personal.timezone;
+                }
             }
             
             if (profile?.financial?.currency) {
@@ -423,6 +461,35 @@
                 document.getElementById('planBadge').className = 'plan-badge pro';
                 document.getElementById('upgradeCard').style.display = 'none';
                 document.getElementById('manageSubscription').style.display = 'block';
+            }
+        }
+        
+        async function saveTimezone() {
+            const timezoneSelect = document.getElementById('timezoneSelect');
+            const timezone = timezoneSelect.value;
+            
+            try {
+                // Update local storage
+                const profile = localStorage.getItem('zeitline_profile');
+                const data = profile ? JSON.parse(profile) : {};
+                if (!data.personal) data.personal = {};
+                data.personal.timezone = timezone;
+                localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                
+                // Try to save to server
+                try {
+                    await apiCall('/users/profile', {
+                        method: 'PUT',
+                        body: JSON.stringify({ personal: { timezone } })
+                    });
+                } catch (e) {
+                    console.log('Could not save timezone to server, saved locally');
+                }
+                
+                showSuccess('Timezone saved: ' + timezone);
+            } catch (error) {
+                console.error('Error saving timezone:', error);
+                showError('Failed to save timezone');
             }
         }
         
@@ -534,8 +601,13 @@
                         updateCalendarButton('apple', true, integrations.appleCalendar);
                     }
                     
+                    // Update Outlook Calendar UI
+                    if (integrations.outlookCalendar?.connected) {
+                        updateCalendarButton('outlook', true, integrations.outlookCalendar);
+                    }
+                    
                     // Show sync info if any calendar is connected
-                    if (integrations.googleCalendar?.connected || integrations.appleCalendar?.connected) {
+                    if (integrations.googleCalendar?.connected || integrations.appleCalendar?.connected || integrations.outlookCalendar?.connected) {
                         updateSyncInfo(integrations);
                     }
                 } catch (e) {
@@ -547,6 +619,8 @@
         function updateCalendarButton(type, connected, calendarData) {
             const btn = document.getElementById(`${type}CalendarBtn`);
             const status = document.getElementById(`${type}CalendarStatus`);
+            
+            if (!btn || !status) return;
             
             if (connected) {
                 btn.textContent = 'Disconnect';
@@ -560,9 +634,12 @@
                 btn.className = 'btn btn-secondary';
                 btn.style.color = '';
                 
-                status.textContent = type === 'google' 
-                    ? 'Sync your events from Google Calendar' 
-                    : 'Sync your events from iCloud Calendar';
+                const messages = {
+                    google: 'Sync your events from Google Calendar',
+                    apple: 'Sync your events from iCloud Calendar',
+                    outlook: 'Sync your events from Microsoft Outlook'
+                };
+                status.textContent = messages[type] || 'Connect your calendar';
             }
         }
         
@@ -579,9 +656,15 @@
                 </span>`);
             }
             if (integrations.appleCalendar?.connected) {
-                calendars.push(`<span style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                calendars.push(`<span style="display: inline-flex; align-items: center; gap: 0.25rem; margin-right: 1rem;">
                     <span style="width: 8px; height: 8px; background: #FF3B30; border-radius: 50%;"></span>
                     Apple Calendar
+                </span>`);
+            }
+            if (integrations.outlookCalendar?.connected) {
+                calendars.push(`<span style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                    <span style="width: 8px; height: 8px; background: #0078D4; border-radius: 50%;"></span>
+                    Outlook Calendar
                 </span>`);
             }
             
@@ -590,7 +673,7 @@
                 calendarsList.innerHTML = calendars.join('');
                 
                 // Get last sync time
-                const lastSync = integrations.lastSync || integrations.googleCalendar?.connectedAt || integrations.appleCalendar?.connectedAt;
+                const lastSync = integrations.lastSync || integrations.googleCalendar?.connectedAt || integrations.appleCalendar?.connectedAt || integrations.outlookCalendar?.connectedAt;
                 if (lastSync) {
                     lastSyncTime.textContent = new Date(lastSync).toLocaleString();
                 }
@@ -607,48 +690,43 @@
             // Check if already connected
             if (integrations.googleCalendar?.connected) {
                 if (confirm('Disconnect Google Calendar? Your calendar events will no longer sync.')) {
-                    delete integrations.googleCalendar;
-                    data.integrations = integrations;
-                    localStorage.setItem('zeitline_profile', JSON.stringify(data));
-                    
-                    updateCalendarButton('google', false, null);
-                    updateSyncInfo(integrations);
-                    showSuccess('Google Calendar disconnected');
+                    try {
+                        showLoading('Disconnecting Google Calendar...');
+                        await apiCall('/calendars/google/disconnect', { method: 'DELETE' });
+                        
+                        delete integrations.googleCalendar;
+                        data.integrations = integrations;
+                        localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                        
+                        hideLoading();
+                        updateCalendarButton('google', false, null);
+                        updateSyncInfo(integrations);
+                        showSuccess('Google Calendar disconnected');
+                    } catch (error) {
+                        hideLoading();
+                        console.error('Error disconnecting:', error);
+                        showError('Failed to disconnect Google Calendar');
+                    }
                 }
                 return;
             }
             
-            // Simulate OAuth flow (in production, this would redirect to Google OAuth)
+            // Redirect to Google OAuth
             showLoading('Connecting to Google Calendar...');
             
             try {
-                // In production: window.location.href = '/api/auth/google-calendar';
-                // For demo, we'll simulate the connection
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                const response = await apiCall('/calendars/google/connect', { method: 'POST' });
                 
-                // Get user email from Firebase if available
-                const userEmail = currentUser?.email || 'user@gmail.com';
-                
-                integrations.googleCalendar = {
-                    connected: true,
-                    email: userEmail,
-                    connectedAt: new Date().toISOString(),
-                    scopes: ['calendar.readonly', 'calendar.events.readonly']
-                };
-                integrations.lastSync = new Date().toISOString();
-                
-                data.integrations = integrations;
-                localStorage.setItem('zeitline_profile', JSON.stringify(data));
-                
-                hideLoading();
-                updateCalendarButton('google', true, integrations.googleCalendar);
-                updateSyncInfo(integrations);
-                showSuccess('Google Calendar connected successfully!');
-                
+                if (response.data?.authUrl) {
+                    // Redirect to Google OAuth
+                    window.location.href = response.data.authUrl;
+                } else {
+                    throw new Error('No auth URL returned');
+                }
             } catch (error) {
                 hideLoading();
                 console.error('Google Calendar connection error:', error);
-                showError('Failed to connect Google Calendar');
+                showError('Failed to connect Google Calendar: ' + (error.message || 'Unknown error'));
             }
         }
         
@@ -660,47 +738,243 @@
             // Check if already connected
             if (integrations.appleCalendar?.connected) {
                 if (confirm('Disconnect Apple Calendar? Your calendar events will no longer sync.')) {
-                    delete integrations.appleCalendar;
-                    data.integrations = integrations;
-                    localStorage.setItem('zeitline_profile', JSON.stringify(data));
-                    
-                    updateCalendarButton('apple', false, null);
-                    updateSyncInfo(integrations);
-                    showSuccess('Apple Calendar disconnected');
+                    try {
+                        showLoading('Disconnecting Apple Calendar...');
+                        await apiCall('/calendars/apple/disconnect', { method: 'DELETE' });
+                        
+                        delete integrations.appleCalendar;
+                        data.integrations = integrations;
+                        localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                        
+                        hideLoading();
+                        updateCalendarButton('apple', false, null);
+                        updateSyncInfo(integrations);
+                        showSuccess('Apple Calendar disconnected');
+                    } catch (error) {
+                        hideLoading();
+                        console.error('Error disconnecting:', error);
+                        showError('Failed to disconnect Apple Calendar');
+                    }
                 }
                 return;
             }
             
             // Show Apple Calendar connection modal
-            const appleId = prompt('Enter your Apple ID email to connect iCloud Calendar:\n\n(In production, this would use Sign in with Apple)');
+            showAppleCalendarModal();
+        }
+        
+        function showAppleCalendarModal() {
+            // Create modal if it doesn't exist
+            let modal = document.getElementById('appleCalendarModal');
+            if (!modal) {
+                modal = document.createElement('div');
+                modal.id = 'appleCalendarModal';
+                modal.className = 'modal-overlay';
+                modal.innerHTML = `
+                    <div class="modal-content" style="max-width: 500px;">
+                        <div class="modal-header">
+                            <h2 style="margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                    <path fill="#FF3B30" d="M19 4h-1V3c0-.55-.45-1-1-1s-1 .45-1 1v1H8V3c0-.55-.45-1-1-1s-1 .45-1 1v1H5c-1.11 0-1.99.9-1.99 2L3 20c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
+                                </svg>
+                                Connect Apple Calendar
+                            </h2>
+                            <button class="modal-close" onclick="closeAppleCalendarModal()">×</button>
+                        </div>
+                        <div class="modal-body">
+                            <p style="color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.9rem;">
+                                Apple Calendar requires an app-specific password for security. 
+                                <a href="https://support.apple.com/en-us/102654" target="_blank" style="color: var(--accent-primary);">Learn how to create one →</a>
+                            </p>
+                            
+                            <div class="form-group" style="margin-bottom: 1rem;">
+                                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">Apple ID Email</label>
+                                <input type="email" id="appleIdEmail" placeholder="your@icloud.com" 
+                                    style="width: 100%; padding: 0.75rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary);">
+                            </div>
+                            
+                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">App-Specific Password</label>
+                                <input type="password" id="appleAppPassword" placeholder="xxxx-xxxx-xxxx-xxxx" 
+                                    style="width: 100%; padding: 0.75rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary);">
+                                <p style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.5rem;">
+                                    Generate at appleid.apple.com → Security → App-Specific Passwords
+                                </p>
+                            </div>
+                            
+                            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                                <button class="btn btn-ghost" onclick="closeAppleCalendarModal()">Cancel</button>
+                                <button class="btn btn-primary" onclick="submitAppleCalendarConnect()">Connect</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                
+                // Add modal styles if not present
+                if (!document.getElementById('modalStyles')) {
+                    const style = document.createElement('style');
+                    style.id = 'modalStyles';
+                    style.textContent = `
+                        .modal-overlay {
+                            position: fixed;
+                            top: 0;
+                            left: 0;
+                            right: 0;
+                            bottom: 0;
+                            background: rgba(0, 0, 0, 0.7);
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            z-index: 1000;
+                            opacity: 0;
+                            visibility: hidden;
+                            transition: opacity 0.2s, visibility 0.2s;
+                        }
+                        .modal-overlay.active {
+                            opacity: 1;
+                            visibility: visible;
+                        }
+                        .modal-content {
+                            background: var(--bg-card);
+                            border: 1px solid var(--border-subtle);
+                            border-radius: 16px;
+                            padding: 1.5rem;
+                            max-width: 90%;
+                            max-height: 90vh;
+                            overflow-y: auto;
+                        }
+                        .modal-header {
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                            margin-bottom: 1.5rem;
+                        }
+                        .modal-close {
+                            background: none;
+                            border: none;
+                            font-size: 1.5rem;
+                            color: var(--text-muted);
+                            cursor: pointer;
+                            padding: 0.25rem;
+                        }
+                        .modal-close:hover {
+                            color: var(--text-primary);
+                        }
+                    `;
+                    document.head.appendChild(style);
+                }
+            }
             
-            if (!appleId) return;
+            // Clear previous values
+            document.getElementById('appleIdEmail').value = '';
+            document.getElementById('appleAppPassword').value = '';
             
+            modal.classList.add('active');
+        }
+        
+        function closeAppleCalendarModal() {
+            const modal = document.getElementById('appleCalendarModal');
+            if (modal) {
+                modal.classList.remove('active');
+            }
+        }
+        
+        async function submitAppleCalendarConnect() {
+            const email = document.getElementById('appleIdEmail').value.trim();
+            const password = document.getElementById('appleAppPassword').value.trim();
+            
+            if (!email || !password) {
+                showError('Please enter both Apple ID email and app-specific password');
+                return;
+            }
+            
+            closeAppleCalendarModal();
             showLoading('Connecting to Apple Calendar...');
             
             try {
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                const response = await apiCall('/calendars/apple/connect', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        email: email,
+                        password: password
+                    })
+                });
                 
-                integrations.appleCalendar = {
-                    connected: true,
-                    account: appleId,
-                    connectedAt: new Date().toISOString(),
-                    method: 'caldav'
-                };
-                integrations.lastSync = new Date().toISOString();
-                
-                data.integrations = integrations;
-                localStorage.setItem('zeitline_profile', JSON.stringify(data));
-                
-                hideLoading();
-                updateCalendarButton('apple', true, integrations.appleCalendar);
-                updateSyncInfo(integrations);
-                showSuccess('Apple Calendar connected successfully!');
-                
+                if (response.success) {
+                    const profile = localStorage.getItem('zeitline_profile');
+                    const data = profile ? JSON.parse(profile) : {};
+                    const integrations = data.integrations || {};
+                    
+                    integrations.appleCalendar = {
+                        connected: true,
+                        account: email,
+                        connectedAt: new Date().toISOString(),
+                        method: 'caldav'
+                    };
+                    integrations.lastSync = new Date().toISOString();
+                    
+                    data.integrations = integrations;
+                    localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                    
+                    hideLoading();
+                    updateCalendarButton('apple', true, integrations.appleCalendar);
+                    updateSyncInfo(integrations);
+                    showSuccess('Apple Calendar connected successfully!');
+                } else {
+                    throw new Error(response.error || 'Failed to connect');
+                }
             } catch (error) {
                 hideLoading();
                 console.error('Apple Calendar connection error:', error);
-                showError('Failed to connect Apple Calendar');
+                showError('Failed to connect Apple Calendar: ' + (error.message || 'Unknown error'));
+            }
+        }
+        
+        async function handleOutlookCalendarConnect() {
+            const profile = localStorage.getItem('zeitline_profile');
+            const data = profile ? JSON.parse(profile) : {};
+            const integrations = data.integrations || {};
+            
+            // Check if already connected
+            if (integrations.outlookCalendar?.connected) {
+                if (confirm('Disconnect Outlook Calendar? Your calendar events will no longer sync.')) {
+                    try {
+                        showLoading('Disconnecting Outlook Calendar...');
+                        await apiCall('/calendars/outlook/disconnect', { method: 'DELETE' });
+                        
+                        delete integrations.outlookCalendar;
+                        data.integrations = integrations;
+                        localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                        
+                        hideLoading();
+                        updateCalendarButton('outlook', false, null);
+                        updateSyncInfo(integrations);
+                        showSuccess('Outlook Calendar disconnected');
+                    } catch (error) {
+                        hideLoading();
+                        console.error('Error disconnecting:', error);
+                        showError('Failed to disconnect Outlook Calendar');
+                    }
+                }
+                return;
+            }
+            
+            // Redirect to Microsoft OAuth
+            showLoading('Connecting to Outlook Calendar...');
+            
+            try {
+                const response = await apiCall('/calendars/outlook/connect', { method: 'POST' });
+                
+                if (response.data?.authUrl) {
+                    window.location.href = response.data.authUrl;
+                } else {
+                    throw new Error('No auth URL returned');
+                }
+            } catch (error) {
+                hideLoading();
+                console.error('Outlook Calendar connection error:', error);
+                showError('Failed to connect Outlook Calendar: ' + (error.message || 'Unknown error'));
             }
         }
         
