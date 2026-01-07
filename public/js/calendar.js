@@ -897,10 +897,20 @@ async function loadEventsFromJSON() {
 function deduplicateEventsClient(events) {
     if (!events || !Array.isArray(events)) return [];
     
-    const seen = new Map();
+    const seenById = new Map();
+    const seenByKey = new Map();
     const TIME_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
     
     for (const event of events) {
+        // First, deduplicate by exact ID if available
+        if (event.id) {
+            if (seenById.has(event.id)) {
+                // Skip duplicate by ID
+                continue;
+            }
+            seenById.set(event.id, event);
+        }
+        
         // Normalize title for comparison
         const normalizedTitle = (event.title || 'No title')
             .toLowerCase()
@@ -915,9 +925,9 @@ function deduplicateEventsClient(events) {
         const roundedStartTime = Math.round(startTime / TIME_TOLERANCE_MS) * TIME_TOLERANCE_MS;
         const key = `${normalizedTitle}|${roundedStartTime}`;
         
-        if (seen.has(key)) {
+        if (seenByKey.has(key)) {
             // Event is a duplicate - merge calendar sources
-            const existing = seen.get(key);
+            const existing = seenByKey.get(key);
             
             // Initialize calendarSources if not present
             if (!existing.calendarSources) {
@@ -960,11 +970,11 @@ function deduplicateEventsClient(events) {
                     name: event.calendarName
                 }]
             };
-            seen.set(key, newEvent);
+            seenByKey.set(key, newEvent);
         }
     }
     
-    return Array.from(seen.values());
+    return Array.from(seenByKey.values());
 }
 
 async function loadCalendarEvents() {
@@ -2894,6 +2904,8 @@ function loadLastSyncInfo() {
 window.syncCalendars = syncCalendars;
 
 // Set up real-time Firestore listener for calendar events
+let isInitialRealtimeLoad = true;
+
 function setupRealtimeCalendarSync() {
     // Get current user
     const user = firebase.auth().currentUser;
@@ -2909,6 +2921,7 @@ function setupRealtimeCalendarSync() {
     }
     
     console.log('Setting up real-time calendar sync for user:', user.uid);
+    isInitialRealtimeLoad = true;
     
     const db = firebase.firestore();
     const eventsRef = db.collection('users').doc(user.uid).collection('calendar_events');
@@ -2916,26 +2929,43 @@ function setupRealtimeCalendarSync() {
     // Listen for changes to calendar events
     calendarEventsUnsubscribe = eventsRef.onSnapshot(
         (snapshot) => {
-            console.log(`Real-time update: ${snapshot.docChanges().length} event changes`);
+            // Skip the initial load - we already loaded events via API
+            if (isInitialRealtimeLoad) {
+                console.log(`Real-time sync: Initial snapshot with ${snapshot.docs.length} events (skipping to avoid duplicates)`);
+                isInitialRealtimeLoad = false;
+                return;
+            }
+            
+            const changes = snapshot.docChanges();
+            if (changes.length === 0) return;
+            
+            console.log(`Real-time update: ${changes.length} event changes`);
             
             let hasChanges = false;
             
-            snapshot.docChanges().forEach((change) => {
+            changes.forEach((change) => {
                 const eventData = change.doc.data();
                 const eventId = change.doc.id;
                 
                 if (change.type === 'added' || change.type === 'modified') {
                     // Get the date key for this event
                     const eventDate = new Date(eventData.start);
-                    const dateKey = eventDate.toISOString().split('T')[0];
+                    if (isNaN(eventDate.getTime())) return;
+                    
+                    const year = eventDate.getFullYear();
+                    const month = eventDate.getMonth() + 1;
+                    const day = eventDate.getDate();
+                    const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                     
                     // Initialize array if needed
                     if (!calendarEvents[dateKey]) {
                         calendarEvents[dateKey] = [];
                     }
                     
-                    // Remove existing event with same ID
-                    calendarEvents[dateKey] = calendarEvents[dateKey].filter(e => e.id !== eventId);
+                    // Remove existing event with same ID from ALL dates (in case date changed)
+                    Object.keys(calendarEvents).forEach(dk => {
+                        calendarEvents[dk] = calendarEvents[dk].filter(e => e.id !== eventId);
+                    });
                     
                     // Add the updated event
                     calendarEvents[dateKey].push({
@@ -2964,8 +2994,8 @@ function setupRealtimeCalendarSync() {
                 }
             });
             
-            // Re-render calendar if there were changes (but not on initial load)
-            if (hasChanges && !snapshot.metadata.hasPendingWrites) {
+            // Re-render calendar if there were changes
+            if (hasChanges) {
                 console.log('Re-rendering calendar due to real-time changes');
                 if (currentView === 'month') {
                     renderCalendar();
@@ -2976,7 +3006,7 @@ function setupRealtimeCalendarSync() {
                 }
                 
                 // Show notification for external changes
-                if (!snapshot.metadata.fromCache) {
+                if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites) {
                     showSyncNotification();
                 }
             }
