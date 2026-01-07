@@ -7,6 +7,7 @@ let selectedDate = null;
 let calendarEvents = {};
 let connectedCalendars = [];
 let zoomLevel = 0; // 0 = default hourly (max zoom out), 1 = 15-min intervals, 2 = 1-min intervals for 2 hours (max zoom in)
+let calendarEventsUnsubscribe = null; // For real-time listener cleanup
 
 // Auto-detect user's system timezone
 let selectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles';
@@ -107,6 +108,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Check if user signed in with Google and auto-connect calendar
         checkGoogleSignIn();
+        
+        // Set up real-time sync for cross-device updates
+        setupRealtimeCalendarSync();
         
         // Listen for OAuth callback messages
         window.addEventListener('message', async (event) => {
@@ -2888,6 +2892,125 @@ function loadLastSyncInfo() {
 
 // Make sync function globally accessible
 window.syncCalendars = syncCalendars;
+
+// Set up real-time Firestore listener for calendar events
+function setupRealtimeCalendarSync() {
+    // Get current user
+    const user = firebase.auth().currentUser;
+    if (!user) {
+        console.log('No user logged in, skipping real-time sync setup');
+        return;
+    }
+    
+    // Clean up existing listener
+    if (calendarEventsUnsubscribe) {
+        calendarEventsUnsubscribe();
+        calendarEventsUnsubscribe = null;
+    }
+    
+    console.log('Setting up real-time calendar sync for user:', user.uid);
+    
+    const db = firebase.firestore();
+    const eventsRef = db.collection('users').doc(user.uid).collection('calendar_events');
+    
+    // Listen for changes to calendar events
+    calendarEventsUnsubscribe = eventsRef.onSnapshot(
+        (snapshot) => {
+            console.log(`Real-time update: ${snapshot.docChanges().length} event changes`);
+            
+            let hasChanges = false;
+            
+            snapshot.docChanges().forEach((change) => {
+                const eventData = change.doc.data();
+                const eventId = change.doc.id;
+                
+                if (change.type === 'added' || change.type === 'modified') {
+                    // Get the date key for this event
+                    const eventDate = new Date(eventData.start);
+                    const dateKey = eventDate.toISOString().split('T')[0];
+                    
+                    // Initialize array if needed
+                    if (!calendarEvents[dateKey]) {
+                        calendarEvents[dateKey] = [];
+                    }
+                    
+                    // Remove existing event with same ID
+                    calendarEvents[dateKey] = calendarEvents[dateKey].filter(e => e.id !== eventId);
+                    
+                    // Add the updated event
+                    calendarEvents[dateKey].push({
+                        id: eventId,
+                        title: eventData.title || 'No title',
+                        description: eventData.description || '',
+                        start: eventData.start,
+                        end: eventData.end,
+                        location: eventData.location || '',
+                        calendarType: eventData.calendarType || 'zeitline',
+                        calendarName: eventData.calendarName || 'Zeitline',
+                        color: calendarColors[eventData.calendarType] || calendarColors.zeitline
+                    });
+                    
+                    hasChanges = true;
+                    console.log(`Event ${change.type}: ${eventData.title}`);
+                }
+                
+                if (change.type === 'removed') {
+                    // Find and remove the event from calendarEvents
+                    Object.keys(calendarEvents).forEach(dateKey => {
+                        calendarEvents[dateKey] = calendarEvents[dateKey].filter(e => e.id !== eventId);
+                    });
+                    hasChanges = true;
+                    console.log(`Event removed: ${eventId}`);
+                }
+            });
+            
+            // Re-render calendar if there were changes (but not on initial load)
+            if (hasChanges && !snapshot.metadata.hasPendingWrites) {
+                console.log('Re-rendering calendar due to real-time changes');
+                if (currentView === 'month') {
+                    renderCalendar();
+                } else if (currentView === 'week') {
+                    renderWeekView();
+                } else if (currentView === 'day') {
+                    renderDayView();
+                }
+                
+                // Show notification for external changes
+                if (!snapshot.metadata.fromCache) {
+                    showSyncNotification();
+                }
+            }
+        },
+        (error) => {
+            console.error('Real-time calendar sync error:', error);
+        }
+    );
+}
+
+// Show a subtle notification when calendar updates from another device
+function showSyncNotification() {
+    const lastSyncInfo = document.getElementById('lastSyncInfo');
+    if (lastSyncInfo) {
+        const originalText = lastSyncInfo.innerHTML;
+        lastSyncInfo.innerHTML = '<span style="color: var(--accent-secondary);">✓ Updated from sync</span>';
+        setTimeout(() => {
+            loadLastSyncInfo();
+        }, 2000);
+    }
+}
+
+// Clean up listener when user signs out
+function cleanupRealtimeSync() {
+    if (calendarEventsUnsubscribe) {
+        calendarEventsUnsubscribe();
+        calendarEventsUnsubscribe = null;
+        console.log('Real-time calendar sync cleaned up');
+    }
+}
+
+// Make functions globally accessible
+window.setupRealtimeCalendarSync = setupRealtimeCalendarSync;
+window.cleanupRealtimeSync = cleanupRealtimeSync;
 
 // UI helpers
 function showError(message) {
