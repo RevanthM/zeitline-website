@@ -277,6 +277,43 @@ router.put("/profile", verifyAuth, async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * POST /users/fix-onboarding
+ * Fix onboarding status for a user (temporary admin endpoint)
+ */
+router.post("/fix-onboarding", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const userEmail = req.user!.email;
+    
+    console.log(`Fixing onboarding for user: ${userEmail} (${uid})`);
+    
+    // Update the user's onboarding status
+    await db.collection("users").doc(uid).set({
+      onboardingComplete: true,
+      updatedAt: Timestamp.now(),
+    }, { merge: true });
+    
+    // Get the updated profile
+    const userDoc = await db.collection("users").doc(uid).get();
+    const profile = userDoc.data();
+    
+    console.log(`Onboarding fixed for ${userEmail}`);
+    
+    res.json({
+      success: true,
+      message: "Onboarding status fixed",
+      data: profile,
+    } as ApiResponse);
+  } catch (error: any) {
+    console.error("Error fixing onboarding:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fix onboarding",
+    } as ApiResponse);
+  }
+});
+
 export default router;
 
 
