@@ -1593,6 +1593,41 @@ router.get("/events", verifyAuth, async (req: Request, res: Response) => {
       }
     }
 
+    // Also fetch Zeitline-created events from Firestore
+    try {
+      const eventsRef = db.collection("users").doc(uid).collection("calendar_events");
+      const zeitlineEventsSnapshot = await eventsRef
+        .where("calendarType", "==", "zeitline")
+        .get();
+      
+      const zeitlineEvents = zeitlineEventsSnapshot.docs
+        .map(doc => {
+          const data = doc.data();
+          return {
+            id: data.id || doc.id,
+            title: data.title || "No title",
+            description: data.description || "",
+            start: data.start,
+            end: data.end || data.start,
+            calendarType: "zeitline",
+            calendarId: "zeitline",
+            calendarName: "Zeitline Events",
+            location: data.location || "",
+            recurrence: data.recurrence || null,
+          };
+        })
+        .filter(event => {
+          // Filter to date range
+          const eventStart = new Date(event.start);
+          return eventStart >= startDate && eventStart <= endDate;
+        });
+      
+      console.log(`Found ${zeitlineEvents.length} Zeitline events for date range`);
+      allEvents.push(...zeitlineEvents);
+    } catch (error) {
+      console.error("Error fetching Zeitline events:", error);
+    }
+
     // Deduplicate events
     const deduplicatedEvents = deduplicateEvents(allEvents);
 
