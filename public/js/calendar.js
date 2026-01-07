@@ -53,6 +53,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Apply saved colors
         applyCalendarColors();
         
+        // Load last sync info
+        loadLastSyncInfo();
+        
         // Render calendar connections immediately (with empty array)
         // Use setTimeout to ensure DOM is fully ready
         setTimeout(() => {
@@ -2779,6 +2782,112 @@ window.openQuickCreateModal = openQuickCreateModal;
 window.closeQuickCreateModal = closeQuickCreateModal;
 window.saveQuickCreateEvent = saveQuickCreateEvent;
 window.openQuickCreateModalWithEvent = openQuickCreateModalWithEvent;
+
+// Sync calendars with connected services
+async function syncCalendars() {
+    const syncBtn = document.getElementById('syncBtn');
+    const syncIcon = document.getElementById('syncIcon');
+    const syncBtnText = document.getElementById('syncBtnText');
+    const lastSyncInfo = document.getElementById('lastSyncInfo');
+    
+    if (!syncBtn) return;
+    
+    // Show loading state
+    syncBtn.disabled = true;
+    syncIcon.style.animation = 'spin 1s linear infinite';
+    syncBtnText.textContent = 'Syncing...';
+    
+    // Add spin animation if not exists
+    if (!document.getElementById('syncSpinStyle')) {
+        const style = document.createElement('style');
+        style.id = 'syncSpinStyle';
+        style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+        document.head.appendChild(style);
+    }
+    
+    try {
+        const response = await apiCall('/calendars/sync', { method: 'POST' });
+        
+        if (response.success) {
+            const { syncResults, lastSync } = response.data;
+            
+            // Show success message
+            let message = 'Sync complete! ';
+            const parts = [];
+            
+            if (syncResults.google?.success) {
+                parts.push(`Google: ${syncResults.google.eventCount || 0} events`);
+            }
+            if (syncResults.apple?.success) {
+                parts.push(`Apple: ${syncResults.apple.eventCount || 0} events`);
+            }
+            if (syncResults.outlook?.success) {
+                parts.push(`Outlook: ${syncResults.outlook.eventCount || 0} events`);
+            }
+            
+            if (parts.length > 0) {
+                message += parts.join(', ');
+            } else {
+                message = 'No calendars connected. Connect calendars in Settings.';
+            }
+            
+            showSuccess(message);
+            
+            // Update last sync time display
+            if (lastSyncInfo) {
+                const syncTime = new Date(lastSync);
+                lastSyncInfo.innerHTML = `Last synced: ${syncTime.toLocaleTimeString()}`;
+            }
+            
+            // Save last sync time to localStorage
+            localStorage.setItem('lastCalendarSync', lastSync);
+            
+            // Reload calendar events
+            await renderCalendar();
+        } else {
+            throw new Error(response.error || 'Sync failed');
+        }
+    } catch (error) {
+        console.error('Sync error:', error);
+        showError('Sync failed: ' + (error.message || 'Unknown error'));
+    } finally {
+        // Reset button state
+        syncBtn.disabled = false;
+        syncIcon.style.animation = '';
+        syncBtnText.textContent = 'Sync';
+    }
+}
+
+// Load and display last sync time on page load
+function loadLastSyncInfo() {
+    const lastSyncInfo = document.getElementById('lastSyncInfo');
+    const lastSync = localStorage.getItem('lastCalendarSync');
+    
+    if (lastSyncInfo && lastSync) {
+        const syncTime = new Date(lastSync);
+        const now = new Date();
+        const diffMs = now - syncTime;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+        
+        let timeAgo;
+        if (diffMins < 1) {
+            timeAgo = 'just now';
+        } else if (diffMins < 60) {
+            timeAgo = `${diffMins} min ago`;
+        } else if (diffHours < 24) {
+            timeAgo = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+        } else {
+            timeAgo = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+        }
+        
+        lastSyncInfo.innerHTML = `Last synced: ${timeAgo}`;
+    }
+}
+
+// Make sync function globally accessible
+window.syncCalendars = syncCalendars;
 
 // UI helpers
 function showError(message) {
