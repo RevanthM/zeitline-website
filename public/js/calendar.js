@@ -2547,6 +2547,168 @@ async function connectAppleCalendar(event) {
 // Make connectAppleCalendar globally accessible
 window.connectAppleCalendar = connectAppleCalendar;
 
+// ============================================
+// QUICK CREATE EVENT MODAL
+// ============================================
+
+// Open quick create modal
+function openQuickCreateModal(dateStr, minutesFromMidnight) {
+    const modal = document.getElementById('quickCreateModal');
+    if (!modal) {
+        console.error('Quick create modal not found');
+        return;
+    }
+    
+    // Set default date
+    const dateInput = document.getElementById('quickCreateDate');
+    if (dateInput) {
+        dateInput.value = dateStr || new Date().toISOString().split('T')[0];
+    }
+    
+    // Set default time
+    const timeInput = document.getElementById('quickCreateTime');
+    if (timeInput && minutesFromMidnight !== undefined) {
+        const hours = Math.floor(minutesFromMidnight / 60);
+        const minutes = minutesFromMidnight % 60;
+        timeInput.value = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+    }
+    
+    // Clear other fields
+    const titleInput = document.getElementById('quickCreateTitle');
+    if (titleInput) titleInput.value = '';
+    
+    const locationInput = document.getElementById('quickCreateLocation');
+    if (locationInput) locationInput.value = '';
+    
+    const descriptionInput = document.getElementById('quickCreateDescription');
+    if (descriptionInput) descriptionInput.value = '';
+    
+    const recurrenceSelect = document.getElementById('quickCreateRecurrence');
+    if (recurrenceSelect) recurrenceSelect.value = '';
+    
+    // Check if there's a pending AI pattern
+    if (window.pendingRecurringPattern) {
+        const pattern = window.pendingRecurringPattern;
+        if (pattern.frequency && recurrenceSelect) {
+            recurrenceSelect.value = pattern.frequency;
+        }
+    }
+    
+    modal.classList.add('active');
+    
+    // Focus on title input
+    setTimeout(() => {
+        if (titleInput) titleInput.focus();
+    }, 100);
+}
+
+// Close quick create modal
+function closeQuickCreateModal(event) {
+    if (event && event.target !== event.currentTarget) return;
+    
+    const modal = document.getElementById('quickCreateModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+    
+    // Clear pending pattern
+    window.pendingRecurringPattern = null;
+}
+
+// Save quick create event
+async function saveQuickCreateEvent(event) {
+    event.preventDefault();
+    
+    const title = document.getElementById('quickCreateTitle')?.value?.trim();
+    const date = document.getElementById('quickCreateDate')?.value;
+    const time = document.getElementById('quickCreateTime')?.value || '09:00';
+    const duration = parseInt(document.getElementById('quickCreateDuration')?.value || '60');
+    const location = document.getElementById('quickCreateLocation')?.value?.trim();
+    const description = document.getElementById('quickCreateDescription')?.value?.trim();
+    const recurrenceValue = document.getElementById('quickCreateRecurrence')?.value;
+    
+    if (!title || !date) {
+        showError('Please enter a title and date');
+        return;
+    }
+    
+    const btn = document.getElementById('quickCreateSaveBtn');
+    const originalText = btn?.textContent || 'Create Event';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Creating...';
+    }
+    
+    try {
+        // Build start and end datetime
+        const startDateTime = new Date(`${date}T${time}:00`);
+        const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 1000);
+        
+        // Build recurrence pattern
+        let recurrence = null;
+        if (recurrenceValue) {
+            recurrence = { frequency: recurrenceValue, interval: 1 };
+            
+            if (recurrenceValue === 'weekdays') {
+                recurrence.frequency = 'weekly';
+                recurrence.daysOfWeek = [1, 2, 3, 4, 5]; // Mon-Fri
+            }
+            
+            // Use pending AI pattern if available
+            if (window.pendingRecurringPattern) {
+                recurrence = { ...recurrence, ...window.pendingRecurringPattern };
+            }
+        }
+        
+        // Create event via API
+        const response = await apiCall('/calendars/events', {
+            method: 'POST',
+            body: JSON.stringify({
+                title,
+                description,
+                start: startDateTime.toISOString(),
+                end: endDateTime.toISOString(),
+                location,
+                recurrence,
+                calendarType: 'zeitline'
+            })
+        });
+        
+        if (response.success) {
+            closeQuickCreateModal();
+            showSuccess(`Event "${title}" created!`);
+            
+            // Reload calendar events to show the new event
+            await loadCalendarEvents();
+            
+            // Re-render current view
+            if (currentView === 'month') {
+                renderCalendar();
+            } else if (currentView === 'week') {
+                renderWeekView();
+            } else if (currentView === 'day') {
+                renderDayView();
+            }
+        } else {
+            throw new Error(response.error || 'Failed to create event');
+        }
+    } catch (error) {
+        console.error('Error creating event:', error);
+        showError(error.message || 'Failed to create event');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+        window.pendingRecurringPattern = null;
+    }
+}
+
+// Make functions globally accessible
+window.openQuickCreateModal = openQuickCreateModal;
+window.closeQuickCreateModal = closeQuickCreateModal;
+window.saveQuickCreateEvent = saveQuickCreateEvent;
+
 // UI helpers
 function showError(message) {
     const existing = document.querySelector(".error-toast");

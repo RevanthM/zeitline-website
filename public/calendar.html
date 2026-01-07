@@ -13,49 +13,7 @@
     <link rel="stylesheet" href="/css/styles.css">
     <style>
         /* Calendar Page Styles */
-        /* Collapse sidebar on calendar page */
-        body:has(.dashboard) .dashboard .sidebar {
-            width: 80px;
-            padding: 1.5rem 0.5rem;
-            transition: width 0.3s ease;
-        }
-        
-        body:has(.dashboard) .dashboard .sidebar .logo {
-            font-size: 0.9rem;
-            text-align: center;
-            padding: 0;
-            letter-spacing: 0.1em;
-        }
-        
-        body:has(.dashboard) .dashboard .sidebar .nav-item {
-            justify-content: center;
-            padding: 0.85rem 0.5rem;
-            font-size: 0;
-        }
-        
-        body:has(.dashboard) .dashboard .sidebar .nav-item svg {
-            margin: 0;
-            flex-shrink: 0;
-            font-size: 20px;
-        }
-        
-        body:has(.dashboard) .dashboard .sidebar .nav-item::after {
-            content: none;
-        }
-        
-        body:has(.dashboard) .dashboard .sidebar .sidebar-footer {
-            padding: 1rem 0.5rem 0;
-        }
-        
-        body:has(.dashboard) .dashboard .sidebar .sidebar-footer button {
-            justify-content: center;
-            padding: 0.5rem;
-            width: 100%;
-        }
-        
-        body:has(.dashboard) .dashboard .sidebar .sidebar-footer button svg {
-            margin: 0;
-        }
+        /* Keep sidebar expanded with text labels visible */
         
         .calendar-view-container {
             display: block;
@@ -2089,6 +2047,12 @@
                     </svg>
                     Insights
                 </a>
+                <a href="/health-fitness.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                    </svg>
+                    Health
+                </a>
                 <a href="/settings.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="3"/>
@@ -2372,6 +2336,82 @@
         </div>
     </div>
     
+    <!-- Quick Create Event Modal -->
+    <div class="event-detail-modal" id="quickCreateModal" onclick="closeQuickCreateModal(event)">
+        <div class="event-detail-content" onclick="event.stopPropagation()" style="max-width: 500px;">
+            <div class="event-detail-header">
+                <button class="event-detail-close" onclick="closeQuickCreateModal()" aria-label="Close">×</button>
+                <h2 class="event-detail-title">📅 Create Event</h2>
+            </div>
+            
+            <div class="event-detail-body">
+                <form id="quickCreateForm" onsubmit="saveQuickCreateEvent(event)">
+                    <div style="margin-bottom: 1rem;">
+                        <label for="quickCreateTitle" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Event Title *</label>
+                        <input type="text" id="quickCreateTitle" required placeholder="Enter event title" 
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label for="quickCreateDate" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Date *</label>
+                            <input type="date" id="quickCreateDate" required 
+                                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                        </div>
+                        <div>
+                            <label for="quickCreateTime" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Time</label>
+                            <input type="time" id="quickCreateTime" value="09:00"
+                                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label for="quickCreateDuration" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Duration</label>
+                        <select id="quickCreateDuration" 
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                            <option value="30">30 minutes</option>
+                            <option value="60" selected>1 hour</option>
+                            <option value="90">1.5 hours</option>
+                            <option value="120">2 hours</option>
+                            <option value="180">3 hours</option>
+                            <option value="240">4 hours</option>
+                            <option value="480">All day (8 hours)</option>
+                        </select>
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label for="quickCreateLocation" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Location</label>
+                        <input type="text" id="quickCreateLocation" placeholder="Add location (optional)" 
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label for="quickCreateDescription" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Description</label>
+                        <textarea id="quickCreateDescription" placeholder="Add description (optional)" rows="3"
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box; resize: vertical;"></textarea>
+                    </div>
+                    
+                    <div style="margin-bottom: 1.5rem;">
+                        <label for="quickCreateRecurrence" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Repeat</label>
+                        <select id="quickCreateRecurrence" 
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                            <option value="">Does not repeat</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="weekdays">Weekdays (Mon-Fri)</option>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" id="quickCreateSaveBtn" class="btn btn-primary" style="width: 100%; padding: 0.875rem; font-size: 1rem;">
+                        Create Event
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
     <!-- Apple Calendar Connection Modal -->
     <div class="event-detail-modal" id="appleCalendarModal" onclick="closeAppleModal(event)">
         <div class="event-detail-content" onclick="event.stopPropagation()" style="max-width: 500px;">
@@ -2432,7 +2472,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/js/firebase-config.js?v=2.1"></script>
-    <script src="/js/calendar.js?v=7.2"></script>
+    <script src="/js/calendar.js?v=8.0"></script>
 </body>
 </html>
 

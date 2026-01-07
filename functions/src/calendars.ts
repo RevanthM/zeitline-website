@@ -1033,6 +1033,230 @@ router.delete("/apple/disconnect", verifyAuth, async (req: Request, res: Respons
 });
 
 /**
+ * POST /calendars/events
+ * Create a new calendar event (stored in Zeitline/Firestore)
+ */
+router.post("/events", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const { title, description, start, end, location, recurrence, calendarType = "zeitline" } = req.body;
+
+    if (!title || !start) {
+      res.status(400).json({
+        success: false,
+        error: "Title and start time are required",
+      } as ApiResponse);
+      return;
+    }
+
+    console.log(`Creating event for user ${uid}: ${title}`);
+
+    // Generate a unique event ID
+    const eventId = `zeitline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Create the event document
+    const eventData = {
+      id: eventId,
+      title,
+      description: description || "",
+      start,
+      end: end || start,
+      location: location || "",
+      calendarType,
+      calendarId: "zeitline",
+      calendarName: "Zeitline Events",
+      recurrence: recurrence || null,
+      source: "zeitline",
+      createdAt: Timestamp.now(),
+      updatedAt: Timestamp.now(),
+    };
+
+    // Save to Firestore
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendar_events")
+      .doc(eventId)
+      .set(eventData);
+
+    console.log(`Event created: ${eventId}`);
+
+    // If there's a recurrence pattern, generate recurring instances
+    if (recurrence && recurrence.frequency) {
+      const instances = generateRecurringEventInstances(eventData, recurrence, 52); // Generate up to 52 instances (1 year)
+      
+      // Save recurring instances
+      const batch = db.batch();
+      for (const instance of instances) {
+        const instanceId = `${eventId}_${instance.start.replace(/[^0-9]/g, '')}`;
+        const instanceRef = db
+          .collection("users")
+          .doc(uid)
+          .collection("calendar_events")
+          .doc(instanceId);
+        
+        batch.set(instanceRef, {
+          ...instance,
+          id: instanceId,
+          parentEventId: eventId,
+          isRecurringInstance: true,
+        });
+      }
+      await batch.commit();
+      console.log(`Created ${instances.length} recurring instances`);
+    }
+
+    res.json({
+      success: true,
+      data: eventData,
+      message: "Event created successfully",
+    } as ApiResponse);
+  } catch (error: any) {
+    console.error("Error creating event:", error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to create event: ${error.message || "Unknown error"}`,
+    } as ApiResponse);
+  }
+});
+
+/**
+ * Generate recurring event instances from a pattern
+ */
+function generateRecurringEventInstances(
+  baseEvent: any,
+  pattern: any,
+  maxInstances: number
+): any[] {
+  const instances: any[] = [];
+  let currentDate = new Date(baseEvent.start);
+  const duration = baseEvent.end 
+    ? new Date(baseEvent.end).getTime() - new Date(baseEvent.start).getTime()
+    : 60 * 60 * 1000; // Default 1 hour
+
+  for (let i = 1; i < maxInstances; i++) {
+    // Calculate next occurrence based on pattern
+    switch (pattern.frequency) {
+      case "daily":
+        currentDate.setDate(currentDate.getDate() + (pattern.interval || 1));
+        break;
+      case "weekly":
+        if (pattern.daysOfWeek && pattern.daysOfWeek.length > 0) {
+          // Find next occurrence of any specified day
+          let found = false;
+          for (let d = 1; d <= 7 && !found; d++) {
+            const nextDate = new Date(currentDate);
+            nextDate.setDate(nextDate.getDate() + d);
+            if (pattern.daysOfWeek.includes(nextDate.getDay())) {
+              currentDate = nextDate;
+              found = true;
+            }
+          }
+          if (!found) {
+            currentDate.setDate(currentDate.getDate() + 7 * (pattern.interval || 1));
+          }
+        } else {
+          currentDate.setDate(currentDate.getDate() + 7 * (pattern.interval || 1));
+        }
+        break;
+      case "monthly":
+        currentDate.setMonth(currentDate.getMonth() + (pattern.interval || 1));
+        if (pattern.dayOfMonth) {
+          currentDate.setDate(pattern.dayOfMonth);
+        }
+        break;
+      case "yearly":
+        currentDate.setFullYear(currentDate.getFullYear() + (pattern.interval || 1));
+        break;
+      default:
+        currentDate.setDate(currentDate.getDate() + (pattern.interval || 1));
+    }
+
+    // Check end conditions
+    if (pattern.endDate && currentDate > new Date(pattern.endDate)) {
+      break;
+    }
+    if (pattern.occurrences && i >= pattern.occurrences) {
+      break;
+    }
+
+    // Create instance
+    const endDate = new Date(currentDate.getTime() + duration);
+    instances.push({
+      title: baseEvent.title,
+      description: baseEvent.description,
+      start: currentDate.toISOString(),
+      end: endDate.toISOString(),
+      location: baseEvent.location,
+      calendarType: baseEvent.calendarType,
+      calendarId: baseEvent.calendarId,
+      calendarName: baseEvent.calendarName,
+      recurrence: pattern,
+      source: "zeitline",
+      createdAt: Timestamp.now(),
+    });
+  }
+
+  return instances;
+}
+
+/**
+ * DELETE /calendars/events/:eventId
+ * Delete a calendar event
+ */
+router.delete("/events/:eventId", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const { eventId } = req.params;
+    const { deleteRecurring } = req.query;
+
+    if (!eventId) {
+      res.status(400).json({
+        success: false,
+        error: "Event ID required",
+      } as ApiResponse);
+      return;
+    }
+
+    // Delete the event
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendar_events")
+      .doc(eventId)
+      .delete();
+
+    // If deleteRecurring is true, delete all recurring instances
+    if (deleteRecurring === "true") {
+      const recurringInstances = await db
+        .collection("users")
+        .doc(uid)
+        .collection("calendar_events")
+        .where("parentEventId", "==", eventId)
+        .get();
+
+      const batch = db.batch();
+      recurringInstances.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      console.log(`Deleted ${recurringInstances.size} recurring instances`);
+    }
+
+    res.json({
+      success: true,
+      message: "Event deleted successfully",
+    } as ApiResponse);
+  } catch (error: any) {
+    console.error("Error deleting event:", error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to delete event: ${error.message || "Unknown error"}`,
+    } as ApiResponse);
+  }
+});
+
+/**
  * GET /calendars/events
  * Get calendar events for a date range
  */
