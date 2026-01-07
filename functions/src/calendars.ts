@@ -324,6 +324,7 @@ router.get("/google/callback", async (req: Request, res: Response) => {
     // Store calendar connection
     const calendarData = {
       type: "google",
+      connected: true,
       accessToken: access_token,
       refreshToken: refresh_token,
       expiresAt: Timestamp.fromMillis(Date.now() + expires_in * 1000),
@@ -398,6 +399,54 @@ router.get("/google/callback", async (req: Request, res: Response) => {
         </body>
       </html>
     `);
+  }
+});
+
+/**
+ * DELETE /calendars/google/disconnect
+ * Disconnect Google Calendar
+ */
+router.delete("/google/disconnect", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    console.log(`Disconnecting Google Calendar for user ${uid}`);
+
+    // Delete the Google calendar document
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendars")
+      .doc("google")
+      .delete();
+
+    // Optionally delete imported Google Calendar events
+    const eventsRef = db
+      .collection("users")
+      .doc(uid)
+      .collection("calendar_events");
+    
+    const googleEvents = await eventsRef
+      .where("calendarType", "==", "google")
+      .get();
+
+    const batch = db.batch();
+    googleEvents.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+
+    console.log(`Deleted ${googleEvents.size} Google Calendar events`);
+
+    res.json({
+      success: true,
+      message: "Google Calendar disconnected successfully",
+    } as ApiResponse);
+  } catch (error: any) {
+    console.error("Error disconnecting Google Calendar:", error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to disconnect: ${error.message || "Unknown error"}`,
+    } as ApiResponse);
   }
 });
 
@@ -522,6 +571,7 @@ router.get("/outlook/callback", async (req: Request, res: Response) => {
 
     const calendarData = {
       type: "outlook",
+      connected: true,
       accessToken: access_token,
       refreshToken: refresh_token,
       expiresAt: Timestamp.fromMillis(Date.now() + expires_in * 1000),
@@ -564,6 +614,54 @@ router.get("/outlook/callback", async (req: Request, res: Response) => {
         </body>
       </html>
     `);
+  }
+});
+
+/**
+ * DELETE /calendars/outlook/disconnect
+ * Disconnect Outlook Calendar
+ */
+router.delete("/outlook/disconnect", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    console.log(`Disconnecting Outlook Calendar for user ${uid}`);
+
+    // Delete the Outlook calendar document
+    await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendars")
+      .doc("outlook")
+      .delete();
+
+    // Delete imported Outlook Calendar events
+    const eventsRef = db
+      .collection("users")
+      .doc(uid)
+      .collection("calendar_events");
+    
+    const outlookEvents = await eventsRef
+      .where("calendarType", "==", "outlook")
+      .get();
+
+    const batch = db.batch();
+    outlookEvents.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    await batch.commit();
+
+    console.log(`Deleted ${outlookEvents.size} Outlook Calendar events`);
+
+    res.json({
+      success: true,
+      message: "Outlook Calendar disconnected successfully",
+    } as ApiResponse);
+  } catch (error: any) {
+    console.error("Error disconnecting Outlook Calendar:", error);
+    res.status(500).json({
+      success: false,
+      error: `Failed to disconnect: ${error.message || "Unknown error"}`,
+    } as ApiResponse);
   }
 });
 

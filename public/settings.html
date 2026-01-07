@@ -584,35 +584,101 @@
         }
         
         // Calendar Integration Functions
-        function initCalendarSettings() {
+        async function initCalendarSettings() {
+            // First load from localStorage for immediate display
             const profile = localStorage.getItem('zeitline_profile');
             if (profile) {
                 try {
                     const data = JSON.parse(profile);
                     const integrations = data.integrations || {};
-                    
-                    // Update Google Calendar UI
-                    if (integrations.googleCalendar?.connected) {
-                        updateCalendarButton('google', true, integrations.googleCalendar);
-                    }
-                    
-                    // Update Apple Calendar UI
-                    if (integrations.appleCalendar?.connected) {
-                        updateCalendarButton('apple', true, integrations.appleCalendar);
-                    }
-                    
-                    // Update Outlook Calendar UI
-                    if (integrations.outlookCalendar?.connected) {
-                        updateCalendarButton('outlook', true, integrations.outlookCalendar);
-                    }
-                    
-                    // Show sync info if any calendar is connected
-                    if (integrations.googleCalendar?.connected || integrations.appleCalendar?.connected || integrations.outlookCalendar?.connected) {
-                        updateSyncInfo(integrations);
-                    }
+                    applyCalendarIntegrations(integrations);
                 } catch (e) {
-                    console.error('Error loading calendar settings:', e);
+                    console.error('Error loading calendar settings from localStorage:', e);
                 }
+            }
+            
+            // Then fetch from API to get the real connection status
+            try {
+                const response = await apiCall('/calendars/list');
+                if (response.success && response.data) {
+                    const calendars = response.data;
+                    console.log('Connected calendars from API:', calendars);
+                    
+                    // Update localStorage and UI based on API response
+                    const profileData = profile ? JSON.parse(profile) : {};
+                    if (!profileData.integrations) profileData.integrations = {};
+                    
+                    // Check each calendar type
+                    const googleCal = calendars.find(c => c.type === 'google' || c.id === 'google');
+                    const appleCal = calendars.find(c => c.type === 'apple' || c.id === 'apple');
+                    const outlookCal = calendars.find(c => c.type === 'outlook' || c.id === 'outlook');
+                    
+                    if (googleCal) {
+                        profileData.integrations.googleCalendar = {
+                            connected: true,
+                            email: googleCal.email || googleCal.calendars?.[0]?.name || '',
+                            connectedAt: googleCal.connectedAt || new Date().toISOString()
+                        };
+                        updateCalendarButton('google', true, profileData.integrations.googleCalendar);
+                    } else {
+                        delete profileData.integrations.googleCalendar;
+                        updateCalendarButton('google', false, null);
+                    }
+                    
+                    if (appleCal) {
+                        profileData.integrations.appleCalendar = {
+                            connected: true,
+                            account: appleCal.email || appleCal.appleId || '',
+                            connectedAt: appleCal.connectedAt || new Date().toISOString()
+                        };
+                        updateCalendarButton('apple', true, profileData.integrations.appleCalendar);
+                    } else {
+                        delete profileData.integrations.appleCalendar;
+                        updateCalendarButton('apple', false, null);
+                    }
+                    
+                    if (outlookCal) {
+                        profileData.integrations.outlookCalendar = {
+                            connected: true,
+                            email: outlookCal.email || '',
+                            connectedAt: outlookCal.connectedAt || new Date().toISOString()
+                        };
+                        updateCalendarButton('outlook', true, profileData.integrations.outlookCalendar);
+                    } else {
+                        delete profileData.integrations.outlookCalendar;
+                        updateCalendarButton('outlook', false, null);
+                    }
+                    
+                    // Save updated integrations to localStorage
+                    localStorage.setItem('zeitline_profile', JSON.stringify(profileData));
+                    
+                    // Update sync info
+                    updateSyncInfo(profileData.integrations);
+                }
+            } catch (error) {
+                console.log('Could not load calendars from API, using localStorage:', error);
+            }
+        }
+        
+        function applyCalendarIntegrations(integrations) {
+            // Update Google Calendar UI
+            if (integrations.googleCalendar?.connected) {
+                updateCalendarButton('google', true, integrations.googleCalendar);
+            }
+            
+            // Update Apple Calendar UI
+            if (integrations.appleCalendar?.connected) {
+                updateCalendarButton('apple', true, integrations.appleCalendar);
+            }
+            
+            // Update Outlook Calendar UI
+            if (integrations.outlookCalendar?.connected) {
+                updateCalendarButton('outlook', true, integrations.outlookCalendar);
+            }
+            
+            // Show sync info if any calendar is connected
+            if (integrations.googleCalendar?.connected || integrations.appleCalendar?.connected || integrations.outlookCalendar?.connected) {
+                updateSyncInfo(integrations);
             }
         }
         
@@ -683,24 +749,41 @@
         }
         
         async function handleGoogleCalendarConnect() {
-            const profile = localStorage.getItem('zeitline_profile');
-            const data = profile ? JSON.parse(profile) : {};
-            const integrations = data.integrations || {};
+            // First check if already connected via API
+            let isConnected = false;
+            try {
+                const response = await apiCall('/calendars/list');
+                if (response.success && response.data) {
+                    const googleCal = response.data.find(c => c.type === 'google' || c.id === 'google');
+                    isConnected = !!googleCal;
+                }
+            } catch (e) {
+                // Fall back to localStorage
+                const profile = localStorage.getItem('zeitline_profile');
+                if (profile) {
+                    const data = JSON.parse(profile);
+                    isConnected = data.integrations?.googleCalendar?.connected;
+                }
+            }
             
             // Check if already connected
-            if (integrations.googleCalendar?.connected) {
+            if (isConnected) {
                 if (confirm('Disconnect Google Calendar? Your calendar events will no longer sync.')) {
                     try {
                         showLoading('Disconnecting Google Calendar...');
                         await apiCall('/calendars/google/disconnect', { method: 'DELETE' });
                         
-                        delete integrations.googleCalendar;
-                        data.integrations = integrations;
-                        localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                        // Update localStorage
+                        const profile = localStorage.getItem('zeitline_profile');
+                        const data = profile ? JSON.parse(profile) : {};
+                        if (data.integrations) {
+                            delete data.integrations.googleCalendar;
+                            localStorage.setItem('zeitline_profile', JSON.stringify(data));
+                        }
                         
                         hideLoading();
                         updateCalendarButton('google', false, null);
-                        updateSyncInfo(integrations);
+                        updateSyncInfo(data.integrations || {});
                         showSuccess('Google Calendar disconnected');
                     } catch (error) {
                         hideLoading();
