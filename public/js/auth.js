@@ -6,6 +6,20 @@ function hasCompletedOnboarding() {
     return true;
   }
   
+  // Check if full onboarding data exists
+  const onboardingData = localStorage.getItem("zeitline_onboarding_data");
+  if (onboardingData) {
+    try {
+      const data = JSON.parse(onboardingData);
+      if (data.onboardingComplete) {
+        localStorage.setItem("zeitline_onboarding_complete", "true");
+        return true;
+      }
+    } catch (e) {
+      // Parse error
+    }
+  }
+  
   // Check if profile data exists with required fields filled
   const savedProfile = localStorage.getItem("zeitline_profile");
   if (savedProfile) {
@@ -28,43 +42,68 @@ function hasCompletedOnboarding() {
   return false;
 }
 
-// Flag to prevent auth state handler from redirecting when Google sign-in is handling it
-let isGoogleSignInInProgress = false;
-
 document.addEventListener("DOMContentLoaded", () => {
   // Determine if we're on login or signup page
   const isLoginPage = window.location.pathname.includes("login");
   const isSignupPage = window.location.pathname.includes("signup");
   
+  // Track if user explicitly wants to stay on login page (e.g., to switch accounts)
+  let allowLoginPage = false;
+  
+  // Check URL parameter for explicit login intent
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('force') === 'true' || urlParams.get('switch') === 'true') {
+    allowLoginPage = true;
+  }
+  
   // Check if user is already signed in
   window.addEventListener("authStateChanged", async (e) => {
     const user = e.detail;
-    if (user) {
-      // Skip if Google sign-in is handling the redirect
-      if (isGoogleSignInInProgress) {
-        console.log("Skipping authStateChanged redirect - Google sign-in is handling it");
-        return;
-      }
-      
-      // If on login page, user is existing - go to dashboard
+    
+    // Check if using test account (has test token but no real Firebase user)
+    const authToken = localStorage.getItem("authToken");
+    const isTestAccount = authToken === "test-token-12345" && !user;
+    
+    if (user || isTestAccount) {
+      // If on login page, only redirect if user didn't explicitly navigate here
+      // This allows users to switch accounts even if they're already logged in
       if (isLoginPage) {
-        localStorage.setItem("zeitline_onboarding_complete", "true");
-        window.location.href = "/dashboard.html";
-        return;
-      }
-      
-      // If on signup page, wait a moment for profile to sync then check
-      if (isSignupPage) {
-        // Wait for profile to be fetched from API (firebase-config.js does this)
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        if (hasCompletedOnboarding()) {
-          window.location.href = "/dashboard.html";
+        // Don't auto-redirect if user explicitly wants to stay on login page
+        if (allowLoginPage || sessionStorage.getItem('stayOnLoginPage') === 'true') {
+          console.log("User is signed in but staying on login page to allow account switching");
+          sessionStorage.removeItem('stayOnLoginPage');
           return;
         }
         
-        // New signup - go to onboarding
-        window.location.href = "/onboarding.html";
+        // Don't auto-redirect if URL has switch parameter
+        if (window.location.search.includes('switch=true')) {
+          console.log("Staying on login page due to switch parameter");
+          return;
+        }
+        
+        // Small delay to prevent immediate redirect if user just logged out
+        setTimeout(() => {
+          if (hasCompletedOnboarding()) {
+            window.location.href = "/dashboard.html";
+          } else {
+            // Existing user but hasn't completed onboarding
+            window.location.href = "/onboarding-chat.html?mode=continue";
+          }
+        }, 100);
+        return;
+      }
+      
+      // If on signup page, check if they've completed onboarding
+      if (isSignupPage) {
+        setTimeout(() => {
+          if (hasCompletedOnboarding()) {
+            window.location.href = "/dashboard.html";
+            return;
+          }
+          
+          // New signup - go to chat onboarding
+          window.location.href = "/onboarding-chat.html?mode=new";
+        }, 100);
       }
     }
   });
@@ -111,14 +150,47 @@ async function handleSignUp(event) {
     const token = await user.getIdToken();
     localStorage.setItem("authToken", token);
 
-    // Create user profile via API
-    await apiCall("/users/create", {
-      method: "POST",
-      body: JSON.stringify({ email, fullName }),
-    });
+    // Pre-populate onboarding data with the name
+    const initialOnboardingData = {
+      life: {
+        fullName: fullName,
+        age: 0,
+        occupation: "",
+        city: "",
+        state: "",
+        country: "USA",
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        livingWith: "",
+        relationshipStatus: "",
+        hasKids: false,
+        kidsCount: 0,
+        workStyle: "",
+        morningPerson: null,
+        sleepTime: "",
+        wakeTime: ""
+      },
+      health: {},
+      diet: {},
+      financial: {},
+      goals: {}
+    };
+    localStorage.setItem("zeitline_onboarding_data", JSON.stringify(initialOnboardingData));
+    
+    // Clear completion flag for new users
+    localStorage.removeItem("zeitline_onboarding_complete");
 
-    // Redirect to onboarding
-    window.location.href = "/onboarding.html";
+    // Try to create user profile via API
+    try {
+      await apiCall("/users/create", {
+        method: "POST",
+        body: JSON.stringify({ email, fullName }),
+      });
+    } catch (apiError) {
+      console.log("API call failed, continuing with local storage");
+    }
+
+    // Redirect to chat onboarding
+    window.location.href = "/onboarding-chat.html?mode=new";
   } catch (error) {
     console.error("Sign up error:", error);
     showError(getAuthErrorMessage(error));
@@ -156,43 +228,20 @@ async function handleSignIn(event) {
 // Google sign in handler
 async function handleGoogleSignIn() {
   try {
-    isGoogleSignInInProgress = true;
     showLoading("Signing in with Google...");
     const user = await signInWithGoogle();
 
-    // Get auth token
+    // Check if this is a new user
     const token = await user.getIdToken();
     localStorage.setItem("authToken", token);
 
-    let isExistingUser = false;
-    let hasCompletedOnboardingFromAPI = false;
-
+    let isNewUser = false;
     try {
-      const profileResponse = await apiCall("/users/profile");
-      console.log("Profile response:", profileResponse);
-      isExistingUser = true;
-      
-      // Check if onboarding is complete from API response
-      if (profileResponse.data) {
-        const profile = profileResponse.data;
-        console.log("Profile data:", profile);
-        
-        // Save profile to localStorage
-        localStorage.setItem("zeitline_profile", JSON.stringify(profile));
-        
-        // Check onboarding status - be more lenient
-        // If they have ANY profile data or have logged in before, consider onboarding complete
-        if (profile.onboardingComplete || 
-            (profile.personal && profile.personal.fullName) ||
-            profile.createdAt) {  // If profile was created, user has been here before
-          hasCompletedOnboardingFromAPI = true;
-          localStorage.setItem("zeitline_onboarding_complete", "true");
-          console.log("User has completed onboarding");
-        }
-      }
-    } catch (profileError) {
-      console.log("Profile fetch error (probably new user):", profileError.message);
+      await apiCall("/users/profile");
+      // Profile exists
+    } catch {
       // New user, create profile
+      isNewUser = true;
       try {
         await apiCall("/users/create", {
           method: "POST",
@@ -201,35 +250,33 @@ async function handleGoogleSignIn() {
             fullName: user.displayName || "",
           }),
         });
-      } catch (createError) {
-        console.log("Create user error:", createError.message);
-        // Profile might already exist, try to fetch again
-        try {
-          const retryResponse = await apiCall("/users/profile");
-          if (retryResponse.data) {
-            isExistingUser = true;
-            hasCompletedOnboardingFromAPI = true;
-            localStorage.setItem("zeitline_profile", JSON.stringify(retryResponse.data));
-            localStorage.setItem("zeitline_onboarding_complete", "true");
-          }
-        } catch (e) {
-          console.log("Retry failed:", e.message);
-        }
+      } catch (e) {
+        console.log("API call failed, continuing with local storage");
       }
     }
 
-    hideLoading();
-    
-    // Redirect based on onboarding status
-    console.log("Redirecting - isExistingUser:", isExistingUser, "hasCompletedOnboarding:", hasCompletedOnboardingFromAPI);
-    
-    if (hasCompletedOnboardingFromAPI) {
-      window.location.href = "/dashboard.html";
-    } else {
-      window.location.href = "/onboarding.html";
+    if (isNewUser) {
+      // Pre-populate onboarding data
+      const initialOnboardingData = {
+        life: {
+          fullName: user.displayName || "",
+          age: 0,
+          occupation: "",
+          city: "",
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+        health: {},
+        diet: {},
+        financial: {},
+        goals: {}
+      };
+      localStorage.setItem("zeitline_onboarding_data", JSON.stringify(initialOnboardingData));
+      localStorage.removeItem("zeitline_onboarding_complete");
     }
+
+    hideLoading();
+    // Auth observer will redirect
   } catch (error) {
-    isGoogleSignInInProgress = false;
     hideLoading();
     console.error("Google sign in error:", error);
     showError(getAuthErrorMessage(error));
@@ -245,16 +292,40 @@ async function handleAppleSignIn() {
     const token = await user.getIdToken();
     localStorage.setItem("authToken", token);
 
+    let isNewUser = false;
     try {
       await apiCall("/users/profile");
     } catch {
-      await apiCall("/users/create", {
-        method: "POST",
-        body: JSON.stringify({
-          email: user.email,
+      isNewUser = true;
+      try {
+        await apiCall("/users/create", {
+          method: "POST",
+          body: JSON.stringify({
+            email: user.email,
+            fullName: user.displayName || "",
+          }),
+        });
+      } catch (e) {
+        console.log("API call failed, continuing with local storage");
+      }
+    }
+
+    if (isNewUser) {
+      const initialOnboardingData = {
+        life: {
           fullName: user.displayName || "",
-        }),
-      });
+          age: 0,
+          occupation: "",
+          city: "",
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        },
+        health: {},
+        diet: {},
+        financial: {},
+        goals: {}
+      };
+      localStorage.setItem("zeitline_onboarding_data", JSON.stringify(initialOnboardingData));
+      localStorage.removeItem("zeitline_onboarding_complete");
     }
 
     hideLoading();
@@ -293,8 +364,6 @@ function getAuthErrorMessage(error) {
     "auth/user-disabled": "This account has been disabled.",
     "auth/user-not-found": "No account found with this email.",
     "auth/wrong-password": "Incorrect password. Please try again.",
-    "auth/invalid-login-credentials": "Invalid email or password. Please check your credentials and try again.",
-    "auth/invalid-credential": "Invalid email or password. Please check your credentials and try again.",
     "auth/too-many-requests": "Too many attempts. Please try again later.",
     "auth/popup-closed-by-user": "Sign-in popup was closed.",
     "auth/cancelled-popup-request": "Sign-in was cancelled.",
@@ -352,4 +421,3 @@ function hideLoading() {
   const overlay = document.querySelector(".loading-overlay");
   if (overlay) overlay.remove();
 }
-

@@ -455,19 +455,15 @@
             <div class="settings-header">
                 <h1>Settings</h1>
                 <p style="color: var(--text-muted);">Manage your account and update your profile information</p>
-                <div style="margin-top: 1rem;">
-                    <a href="/onboarding-chat.html?mode=edit" class="btn btn-secondary" style="gap: 0.5rem;">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                        </svg>
-                        Edit with AI Chat
-                    </a>
-                </div>
             </div>
             
             <!-- Tab Navigation -->
             <div class="settings-tabs">
-                <button class="settings-tab active" data-tab="account">
+                <button class="settings-tab active" data-tab="personal-data">
+                    <span class="settings-tab-icon">📝</span>
+                    Edit Personal Data
+                </button>
+                <button class="settings-tab" data-tab="account">
                     <span class="settings-tab-icon">👤</span>
                     Account
                 </button>
@@ -493,8 +489,37 @@
                 </button>
             </div>
             
+            <!-- Edit Personal Data Section -->
+            <div class="settings-section active" id="section-personal-data">
+                <h2><span class="section-icon">📝</span> Edit Personal Data</h2>
+                <p style="color: var(--text-muted); margin-bottom: 1rem;">Edit the information collected during your onboarding conversation. All data is stored in JSON format.</p>
+                <div style="margin-bottom: 2rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+                    <a href="/onboarding-chat.html?mode=edit" class="btn btn-secondary" style="gap: 0.5rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                        Edit with AI Chat
+                    </a>
+                    <button class="btn btn-ghost" onclick="exportData()" style="gap: 0.5rem;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Export JSON
+                    </button>
+                </div>
+                
+                <div id="personalDataForm" style="display: grid; gap: 1.5rem;">
+                    <!-- Form will be dynamically generated from JSON data -->
+                    <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                        <p>Loading your personal data...</p>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Account Section -->
-            <div class="settings-section active" id="section-account">
+            <div class="settings-section" id="section-account">
                 <h2><span class="section-icon">👤</span> Account</h2>
                 
                 <div class="settings-grid">
@@ -904,6 +929,7 @@
         let originalData = {};
         let currentData = {};
         let hasChanges = false;
+        let onboardingData = {};
         
         // Load data on page load
         document.addEventListener('DOMContentLoaded', () => {
@@ -911,6 +937,7 @@
             initializeTagSelectors();
             initializeSliders();
             initializeToggles();
+            loadOnboardingData();
             loadSettings();
             setupChangeTracking();
             
@@ -979,6 +1006,253 @@
             });
         }
         
+        function loadOnboardingData() {
+            const formContainer = document.getElementById('personalDataForm');
+            if (!formContainer) return;
+            
+            // Load onboarding data from localStorage
+            const storedData = localStorage.getItem('zeitline_onboarding_data');
+            if (!storedData) {
+                formContainer.innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                        <p style="margin-bottom: 1rem;">No onboarding data found.</p>
+                        <a href="/onboarding-chat.html" class="btn btn-primary">Start Onboarding</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            try {
+                const parsed = JSON.parse(storedData);
+                onboardingData = parsed.collectedData || {};
+                originalData = JSON.parse(JSON.stringify(onboardingData));
+                currentData = JSON.parse(JSON.stringify(onboardingData));
+                
+                // Generate form from JSON data
+                generateFormFromData(onboardingData, formContainer);
+            } catch (e) {
+                console.error('Error parsing onboarding data:', e);
+                formContainer.innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: var(--accent-tertiary);">
+                        <p>Error loading data. Please try again or restart onboarding.</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function generateFormFromData(data, container) {
+            if (!data || Object.keys(data).length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                        <p>No data to display. Complete onboarding first.</p>
+                        <a href="/onboarding-chat.html" class="btn btn-primary" style="margin-top: 1rem;">Start Onboarding</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Group fields by category
+            const categories = {
+                'Personal Information': ['fullName', 'age', 'birthday', 'occupation', 'city', 'timezone'],
+                'Lifestyle': ['workStyle', 'chronotype', 'livingWith', 'hobbies', 'morningPerson'],
+                'Health & Fitness': ['exerciseFrequency', 'sleepHours', 'stressScore', 'workoutTypes', 'fitnessGoals'],
+                'Diet & Nutrition': ['dietType', 'cookingFrequency', 'mealsPerDay', 'waterIntake', 'allergies', 'nutritionGoals'],
+                'Financial': ['incomeRange', 'salary', 'savingsRate', 'currency', 'housingType', 'investmentTypes', 'financialGoals'],
+                'Goals & Aspirations': ['lifeVision', 'oneYearGoal', 'priorities', 'challenges', 'lifeGoals']
+            };
+            
+            let html = '';
+            
+            Object.keys(categories).forEach(category => {
+                const fields = categories[category].filter(field => data.hasOwnProperty(field));
+                if (fields.length === 0) return;
+                
+                html += `<div class="settings-section" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--bg-elevated); border-radius: 16px; border: 1px solid var(--border-subtle);">`;
+                html += `<h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1.5rem; color: var(--text-primary);">${category}</h3>`;
+                html += `<div class="settings-grid">`;
+                
+                fields.forEach(field => {
+                    const value = data[field];
+                    const fieldId = `field-${field}`;
+                    const label = formatFieldLabel(field);
+                    
+                    html += `<div class="settings-item">`;
+                    html += `<label>${label}</label>`;
+                    
+                    // Handle different data types
+                    if (Array.isArray(value)) {
+                        // Multi-select tags
+                        html += `<div class="tag-container" id="${fieldId}">`;
+                        // Get available options for this field
+                        const options = getFieldOptions(field);
+                        options.forEach(option => {
+                            const isSelected = value.includes(option.value);
+                            html += `<span class="tag ${isSelected ? 'selected' : ''}" data-value="${option.value}" onclick="toggleTag(this, '${field}')">${option.label}</span>`;
+                        });
+                        html += `</div>`;
+                    } else if (typeof value === 'boolean') {
+                        // Toggle
+                        html += `<div class="toggle-row">`;
+                        html += `<button class="toggle-option ${value ? 'selected' : ''}" onclick="toggleBoolean('${field}', true)">Yes</button>`;
+                        html += `<button class="toggle-option ${!value ? 'selected' : ''}" onclick="toggleBoolean('${field}', false)">No</button>`;
+                        html += `</div>`;
+                    } else if (field.includes('Hours') || field.includes('Score') || field.includes('Rate') || field.includes('Intake')) {
+                        // Slider for numeric values
+                        const min = field.includes('Hours') ? 4 : field.includes('Score') ? 1 : 0;
+                        const max = field.includes('Hours') ? 12 : field.includes('Score') ? 10 : field.includes('Rate') ? 50 : 15;
+                        html += `<div class="slider-row">`;
+                        html += `<input type="range" id="${fieldId}" min="${min}" max="${max}" value="${value || (min + max) / 2}" oninput="updateSlider('${field}', this.value)">`;
+                        html += `<div class="slider-value" id="${fieldId}-value">${value || (min + max) / 2}</div>`;
+                        html += `</div>`;
+                    } else if (field === 'birthday' || field.includes('Date')) {
+                        // Date input
+                        html += `<input type="date" id="${fieldId}" value="${formatDateForInput(value)}" onchange="updateField('${field}', this.value)">`;
+                    } else if (field.includes('Goal') || field.includes('Vision') || field.includes('Challenges') || field.length > 50) {
+                        // Textarea for longer text
+                        html += `<textarea id="${fieldId}" rows="3" style="width: 100%; padding: 0.85rem 1rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-primary); font-size: 0.95rem; font-family: inherit; resize: vertical;" onchange="updateField('${field}', this.value)">${value || ''}</textarea>`;
+                    } else {
+                        // Regular text input
+                        html += `<input type="text" id="${fieldId}" value="${value || ''}" onchange="updateField('${field}', this.value)">`;
+                    }
+                    
+                    html += `</div>`;
+                });
+                
+                html += `</div></div>`;
+            });
+            
+            // Add any fields not in categories
+            const uncategorizedFields = Object.keys(data).filter(field => {
+                return !Object.values(categories).flat().includes(field) && !field.startsWith('_');
+            });
+            
+            if (uncategorizedFields.length > 0) {
+                html += `<div class="settings-section" style="margin-bottom: 2rem; padding: 1.5rem; background: var(--bg-elevated); border-radius: 16px; border: 1px solid var(--border-subtle);">`;
+                html += `<h3 style="font-size: 1.1rem; font-weight: 600; margin-bottom: 1.5rem;">Other Information</h3>`;
+                html += `<div class="settings-grid">`;
+                
+                uncategorizedFields.forEach(field => {
+                    const value = data[field];
+                    const fieldId = `field-${field}`;
+                    const label = formatFieldLabel(field);
+                    
+                    html += `<div class="settings-item">`;
+                    html += `<label>${label}</label>`;
+                    html += `<input type="text" id="${fieldId}" value="${value || ''}" onchange="updateField('${field}', this.value)">`;
+                    html += `</div>`;
+                });
+                
+                html += `</div></div>`;
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function formatFieldLabel(field) {
+            return field
+                .replace(/([A-Z])/g, ' $1')
+                .replace(/^./, str => str.toUpperCase())
+                .trim();
+        }
+        
+        function formatDateForInput(dateValue) {
+            if (!dateValue) return '';
+            if (typeof dateValue === 'string') {
+                const date = new Date(dateValue);
+                if (!isNaN(date.getTime())) {
+                    return date.toISOString().split('T')[0];
+                }
+            }
+            return '';
+        }
+        
+        function getFieldOptions(field) {
+            // Return available options for multi-select fields
+            const optionsMap = {
+                'workoutTypes': [
+                    { value: 'running', label: '🏃 Running' },
+                    { value: 'walking', label: '🚶 Walking' },
+                    { value: 'weights', label: '🏋️ Weights' },
+                    { value: 'yoga', label: '🧘 Yoga' },
+                    { value: 'cycling', label: '🚴 Cycling' },
+                    { value: 'swimming', label: '🏊 Swimming' },
+                    { value: 'sports', label: '⚽ Sports' },
+                    { value: 'hiit', label: '🔥 HIIT' }
+                ],
+                'fitnessGoals': [
+                    { value: 'lose_weight', label: '⚖️ Lose Weight' },
+                    { value: 'build_muscle', label: '💪 Build Muscle' },
+                    { value: 'flexibility', label: '🧘 Flexibility' },
+                    { value: 'endurance', label: '🏃 Endurance' },
+                    { value: 'strength', label: '🏋️ Strength' }
+                ],
+                'priorities': [
+                    { value: 'health', label: '💪 Health' },
+                    { value: 'career', label: '💼 Career' },
+                    { value: 'relationships', label: '❤️ Relationships' },
+                    { value: 'money', label: '💰 Money' },
+                    { value: 'growth', label: '📈 Personal Growth' }
+                ],
+                'lifeGoals': [
+                    { value: 'career_success', label: '💼 Career Success' },
+                    { value: 'financial_freedom', label: '💰 Financial Freedom' },
+                    { value: 'health_fitness', label: '💪 Peak Health' },
+                    { value: 'travel_world', label: '🌍 Travel the World' }
+                ]
+            };
+            
+            return optionsMap[field] || [];
+        }
+        
+        function updateField(field, value) {
+            currentData[field] = value;
+            markAsChanged();
+        }
+        
+        function toggleTag(element, field) {
+            element.classList.toggle('selected');
+            const selectedTags = Array.from(element.parentElement.querySelectorAll('.tag.selected'))
+                .map(tag => tag.dataset.value);
+            currentData[field] = selectedTags;
+            markAsChanged();
+        }
+        
+        function toggleBoolean(field, value) {
+            currentData[field] = value;
+            // Find the toggle container and update selected state
+            const toggles = document.querySelectorAll(`[onclick*="toggleBoolean('${field}'"]`);
+            toggles.forEach(toggle => {
+                const container = toggle.closest('.toggle-row');
+                if (container) {
+                    container.querySelectorAll('.toggle-option').forEach(opt => {
+                        opt.classList.remove('selected');
+                        if (opt.textContent.trim() === (value ? 'Yes' : 'No')) {
+                            opt.classList.add('selected');
+                        }
+                    });
+                }
+            });
+            markAsChanged();
+        }
+        
+        function updateSlider(field, value) {
+            currentData[field] = parseFloat(value);
+            const valueEl = document.getElementById(`field-${field}-value`);
+            if (valueEl) valueEl.textContent = value;
+            markAsChanged();
+        }
+        
+        function exportData() {
+            const dataStr = JSON.stringify(onboardingData, null, 2);
+            const dataBlob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `zeitline-onboarding-data-${Date.now()}.json`;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+        
         function loadSettings() {
             // Try to load onboarding data first (more detailed)
             let data = {};
@@ -986,13 +1260,60 @@
             const onboardingData = localStorage.getItem('zeitline_onboarding_data');
             if (onboardingData) {
                 try {
-                    data = JSON.parse(onboardingData);
+                    const parsed = JSON.parse(onboardingData);
+                    // Convert collectedData to the format expected by the form
+                    if (parsed.collectedData) {
+                        data = {
+                            life: {
+                                fullName: parsed.collectedData.fullName || '',
+                                age: parsed.collectedData.age || '',
+                                occupation: parsed.collectedData.occupation || '',
+                                city: parsed.collectedData.city || '',
+                                workStyle: parsed.collectedData.workStyle || '',
+                                livingWith: parsed.collectedData.livingWith || '',
+                                morningPerson: parsed.collectedData.morningPerson || parsed.collectedData.chronotype || '',
+                                timezone: parsed.collectedData.timezone || ''
+                            },
+                            health: {
+                                exerciseFrequency: parsed.collectedData.exerciseFrequency || '',
+                                currentWeight: parsed.collectedData.currentWeight || 0,
+                                targetWeight: parsed.collectedData.targetWeight || 0,
+                                dailySteps: parsed.collectedData.dailySteps || 0,
+                                workoutTypes: parsed.collectedData.workoutTypes || [],
+                                fitnessGoals: parsed.collectedData.fitnessGoals || [],
+                                stressLevel: parsed.collectedData.stressScore || 5,
+                                sleepQuality: parsed.collectedData.sleepHours || 6
+                            },
+                            diet: {
+                                dietType: parsed.collectedData.dietType || '',
+                                mealsPerDay: parsed.collectedData.mealsPerDay || '',
+                                cookingFrequency: parsed.collectedData.cookingFrequency || '',
+                                waterIntake: parsed.collectedData.waterIntake || 8,
+                                allergies: parsed.collectedData.allergies || [],
+                                nutritionGoals: parsed.collectedData.nutritionGoals || []
+                            },
+                            financial: {
+                                salary: parsed.collectedData.salary || parsed.collectedData.incomeRange || 0,
+                                currency: parsed.collectedData.currency || 'USD',
+                                housingType: parsed.collectedData.housingType || '',
+                                savingsRate: parsed.collectedData.savingsRate || 10,
+                                investmentTypes: parsed.collectedData.investmentTypes || [],
+                                financialGoals: parsed.collectedData.financialGoals || []
+                            },
+                            goals: {
+                                lifeGoals: parsed.collectedData.lifeGoals || [],
+                                oneYearGoals: parsed.collectedData.oneYearGoal ? [parsed.collectedData.oneYearGoal] : [],
+                                priorities: parsed.collectedData.priorities || [],
+                                challenges: parsed.collectedData.challenges || []
+                            }
+                        };
+                    }
                 } catch (e) {}
             }
             
             // Fall back to profile data
             const profileData = localStorage.getItem('zeitline_profile');
-            if (profileData && !onboardingData) {
+            if (profileData && Object.keys(data).length === 0) {
                 try {
                     const profile = JSON.parse(profileData);
                     data = {
@@ -1002,6 +1323,7 @@
                             occupation: profile.personal?.occupation || '',
                             city: profile.personal?.city || '',
                             workStyle: profile.lifestyle?.workStyle || '',
+                            livingWith: profile.lifestyle?.livingWith || '',
                             timezone: profile.personal?.timezone || ''
                         },
                         health: profile.health || {},
@@ -1012,10 +1334,7 @@
                 } catch (e) {}
             }
             
-            originalData = JSON.parse(JSON.stringify(data));
-            currentData = data;
-            
-            // Populate form fields
+            // Populate form fields for the traditional settings sections
             populateFields(data);
         }
         
@@ -1146,99 +1465,172 @@
         }
         
         function discardChanges() {
-            populateFields(originalData);
+            currentData = JSON.parse(JSON.stringify(originalData));
+            const formContainer = document.getElementById('personalDataForm');
+            if (formContainer) {
+                generateFormFromData(currentData, formContainer);
+            }
             hasChanges = false;
             document.getElementById('saveBar').classList.remove('visible');
         }
         
         async function saveSettings() {
-            // Collect all form data
-            const updatedData = {
-                life: {
-                    fullName: document.getElementById('life-fullName').value,
-                    age: parseInt(document.getElementById('life-age').value) || 0,
-                    occupation: document.getElementById('life-occupation').value,
-                    city: document.getElementById('life-city').value,
-                    workStyle: document.getElementById('life-workStyle').value,
-                    livingWith: document.getElementById('life-livingWith').value,
-                    morningPerson: getToggleValue('life-morningPerson'),
-                    timezone: document.getElementById('life-timezone').value
-                },
-                health: {
-                    exerciseFrequency: document.getElementById('health-exerciseFrequency').value,
-                    currentWeight: parseFloat(document.getElementById('health-currentWeight').value) || 0,
-                    targetWeight: parseFloat(document.getElementById('health-targetWeight').value) || 0,
-                    dailySteps: parseInt(document.getElementById('health-dailySteps').value) || 0,
-                    workoutTypes: getSelectedTags('health-workoutTypes'),
-                    fitnessGoals: getSelectedTags('health-fitnessGoals'),
-                    stressLevel: parseInt(document.getElementById('health-stressLevel').value),
-                    sleepQuality: parseInt(document.getElementById('health-sleepQuality').value)
-                },
-                diet: {
-                    dietType: document.getElementById('diet-dietType').value,
-                    mealsPerDay: document.getElementById('diet-mealsPerDay').value,
-                    cookingFrequency: document.getElementById('diet-cookingFrequency').value,
-                    waterIntake: parseInt(document.getElementById('diet-waterIntake').value),
-                    allergies: getSelectedTags('diet-allergies'),
-                    nutritionGoals: getSelectedTags('diet-nutritionGoals')
-                },
-                financial: {
-                    salary: parseFloat(document.getElementById('financial-salary').value) || 0,
-                    currency: document.getElementById('financial-currency').value,
-                    housingType: document.getElementById('financial-housingType').value,
-                    savingsRate: parseInt(document.getElementById('financial-savingsRate').value),
-                    investmentTypes: getSelectedTags('financial-investmentTypes'),
-                    financialGoals: getSelectedTags('financial-financialGoals')
-                },
-                goals: {
-                    lifeGoals: getSelectedTags('goals-lifeGoals'),
-                    oneYearGoals: [document.getElementById('goals-oneYearGoal').value].filter(Boolean),
-                    priorities: getSelectedTags('goals-priorities'),
-                    challenges: getSelectedTags('goals-challenges')
+            // Check which tab is active
+            const activeTab = document.querySelector('.settings-tab.active');
+            const activeTabName = activeTab ? activeTab.dataset.tab : 'personal-data';
+            
+            if (activeTabName === 'personal-data') {
+                // Save personal data from JSON form
+                const storedData = localStorage.getItem('zeitline_onboarding_data');
+                if (!storedData) {
+                    showToast('No onboarding data found to update');
+                    return;
                 }
-            };
-            
-            // Save to localStorage
-            localStorage.setItem('zeitline_onboarding_data', JSON.stringify(updatedData));
-            
-            // Also update profile format
-            const profileData = {
-                personal: {
-                    fullName: updatedData.life.fullName,
-                    age: updatedData.life.age,
-                    occupation: updatedData.life.occupation,
-                    city: updatedData.life.city,
-                    timezone: updatedData.life.timezone
-                },
-                lifestyle: {
-                    workStyle: updatedData.life.workStyle,
-                    morningPerson: updatedData.life.morningPerson === 'morning'
-                },
-                financial: updatedData.financial,
-                health: updatedData.health,
-                diet: updatedData.diet,
-                goals: updatedData.goals,
-                onboardingComplete: true
-            };
-            localStorage.setItem('zeitline_profile', JSON.stringify(profileData));
-            
-            // Try to save to server
-            try {
-                if (typeof apiCall === 'function') {
-                    await apiCall('/users/profile', {
-                        method: 'PUT',
-                        body: JSON.stringify(profileData)
-                    });
+                
+                try {
+                    const parsed = JSON.parse(storedData);
+                    
+                    // Update the collectedData with current edits
+                    parsed.collectedData = currentData;
+                    parsed.timestamp = Date.now();
+                    
+                    // Save back to localStorage in JSON format
+                    localStorage.setItem('zeitline_onboarding_data', JSON.stringify(parsed));
+                    
+                    // Also update the profile format for backward compatibility
+                    const profileData = {
+                        personal: {
+                            fullName: currentData.fullName || '',
+                            age: currentData.age || 0,
+                            occupation: currentData.occupation || '',
+                            city: currentData.city || '',
+                            timezone: currentData.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+                        },
+                        lifestyle: {
+                            workStyle: currentData.workStyle || '',
+                            morningPerson: currentData.morningPerson === 'morning' || currentData.chronotype === 'morning'
+                        },
+                        health: {
+                            exerciseFrequency: currentData.exerciseFrequency || '',
+                            sleepHours: currentData.sleepHours || 8,
+                            stressLevel: currentData.stressScore || 5
+                        },
+                        diet: {
+                            dietType: currentData.dietType || '',
+                            cookingFrequency: currentData.cookingFrequency || ''
+                        },
+                        financial: {
+                            salary: currentData.salary || 0,
+                            savingsRate: currentData.savingsRate || 0
+                        },
+                        goals: {
+                            oneYearGoals: currentData.oneYearGoal ? [currentData.oneYearGoal] : [],
+                            priorities: currentData.priorities || [],
+                            challenges: currentData.challenges || ''
+                        },
+                        onboardingComplete: true
+                    };
+                    localStorage.setItem('zeitline_profile', JSON.stringify(profileData));
+                    
+                    originalData = JSON.parse(JSON.stringify(currentData));
+                    onboardingData = JSON.parse(JSON.stringify(currentData));
+                    hasChanges = false;
+                    document.getElementById('saveBar').classList.remove('visible');
+                    
+                    showToast('Personal data saved successfully!');
+                } catch (e) {
+                    console.error('Error saving data:', e);
+                    showToast('Error saving data. Please try again.');
                 }
-            } catch (e) {
-                console.log('Could not save to server');
+            } else {
+                // Save traditional settings form data
+                const updatedData = {
+                    life: {
+                        fullName: document.getElementById('life-fullName').value,
+                        age: parseInt(document.getElementById('life-age').value) || 0,
+                        occupation: document.getElementById('life-occupation').value,
+                        city: document.getElementById('life-city').value,
+                        workStyle: document.getElementById('life-workStyle').value,
+                        livingWith: document.getElementById('life-livingWith').value,
+                        morningPerson: getToggleValue('life-morningPerson'),
+                        timezone: document.getElementById('life-timezone').value
+                    },
+                    health: {
+                        exerciseFrequency: document.getElementById('health-exerciseFrequency').value,
+                        currentWeight: parseFloat(document.getElementById('health-currentWeight').value) || 0,
+                        targetWeight: parseFloat(document.getElementById('health-targetWeight').value) || 0,
+                        dailySteps: parseInt(document.getElementById('health-dailySteps').value) || 0,
+                        workoutTypes: getSelectedTags('health-workoutTypes'),
+                        fitnessGoals: getSelectedTags('health-fitnessGoals'),
+                        stressLevel: parseInt(document.getElementById('health-stressLevel').value),
+                        sleepQuality: parseInt(document.getElementById('health-sleepQuality').value)
+                    },
+                    diet: {
+                        dietType: document.getElementById('diet-dietType').value,
+                        mealsPerDay: document.getElementById('diet-mealsPerDay').value,
+                        cookingFrequency: document.getElementById('diet-cookingFrequency').value,
+                        waterIntake: parseInt(document.getElementById('diet-waterIntake').value),
+                        allergies: getSelectedTags('diet-allergies'),
+                        nutritionGoals: getSelectedTags('diet-nutritionGoals')
+                    },
+                    financial: {
+                        salary: parseFloat(document.getElementById('financial-salary').value) || 0,
+                        currency: document.getElementById('financial-currency').value,
+                        housingType: document.getElementById('financial-housingType').value,
+                        savingsRate: parseInt(document.getElementById('financial-savingsRate').value),
+                        investmentTypes: getSelectedTags('financial-investmentTypes'),
+                        financialGoals: getSelectedTags('financial-financialGoals')
+                    },
+                    goals: {
+                        lifeGoals: getSelectedTags('goals-lifeGoals'),
+                        oneYearGoals: [document.getElementById('goals-oneYearGoal').value].filter(Boolean),
+                        priorities: getSelectedTags('goals-priorities'),
+                        challenges: getSelectedTags('goals-challenges')
+                    }
+                };
+                
+                // Save to localStorage
+                localStorage.setItem('zeitline_onboarding_data', JSON.stringify(updatedData));
+                
+                // Also update profile format
+                const profileData = {
+                    personal: {
+                        fullName: updatedData.life.fullName,
+                        age: updatedData.life.age,
+                        occupation: updatedData.life.occupation,
+                        city: updatedData.life.city,
+                        timezone: updatedData.life.timezone
+                    },
+                    lifestyle: {
+                        workStyle: updatedData.life.workStyle,
+                        morningPerson: updatedData.life.morningPerson === 'morning'
+                    },
+                    financial: updatedData.financial,
+                    health: updatedData.health,
+                    diet: updatedData.diet,
+                    goals: updatedData.goals,
+                    onboardingComplete: true
+                };
+                localStorage.setItem('zeitline_profile', JSON.stringify(profileData));
+                
+                // Try to save to server
+                try {
+                    if (typeof apiCall === 'function') {
+                        await apiCall('/users/profile', {
+                            method: 'PUT',
+                            body: JSON.stringify(profileData)
+                        });
+                    }
+                } catch (e) {
+                    console.log('Could not save to server');
+                }
+                
+                originalData = JSON.parse(JSON.stringify(updatedData));
+                hasChanges = false;
+                document.getElementById('saveBar').classList.remove('visible');
+                
+                showToast('Settings saved successfully!');
             }
-            
-            originalData = JSON.parse(JSON.stringify(updatedData));
-            hasChanges = false;
-            document.getElementById('saveBar').classList.remove('visible');
-            
-            showToast('Settings saved successfully!');
         }
         
         function showToast(message) {

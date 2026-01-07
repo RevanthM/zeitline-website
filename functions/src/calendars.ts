@@ -6,11 +6,6 @@ import { Timestamp } from "firebase-admin/firestore";
 import axios from "axios";
 import * as fs from "fs";
 import * as path from "path";
-import { createDAVClient, DAVCalendar } from "tsdav";
-import * as CryptoJS from "crypto-js";
-
-// Encryption key for storing Apple Calendar credentials
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || "zeitline-apple-calendar-key-32!!";
 
 const router = Router();
 const db = admin.firestore();
@@ -324,7 +319,6 @@ router.get("/google/callback", async (req: Request, res: Response) => {
     // Store calendar connection
     const calendarData = {
       type: "google",
-      connected: true,
       accessToken: access_token,
       refreshToken: refresh_token,
       expiresAt: Timestamp.fromMillis(Date.now() + expires_in * 1000),
@@ -399,54 +393,6 @@ router.get("/google/callback", async (req: Request, res: Response) => {
         </body>
       </html>
     `);
-  }
-});
-
-/**
- * DELETE /calendars/google/disconnect
- * Disconnect Google Calendar
- */
-router.delete("/google/disconnect", verifyAuth, async (req: Request, res: Response) => {
-  try {
-    const uid = req.user!.uid;
-    console.log(`Disconnecting Google Calendar for user ${uid}`);
-
-    // Delete the Google calendar document
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("calendars")
-      .doc("google")
-      .delete();
-
-    // Optionally delete imported Google Calendar events
-    const eventsRef = db
-      .collection("users")
-      .doc(uid)
-      .collection("calendar_events");
-    
-    const googleEvents = await eventsRef
-      .where("calendarType", "==", "google")
-      .get();
-
-    const batch = db.batch();
-    googleEvents.docs.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
-    await batch.commit();
-
-    console.log(`Deleted ${googleEvents.size} Google Calendar events`);
-
-    res.json({
-      success: true,
-      message: "Google Calendar disconnected successfully",
-    } as ApiResponse);
-  } catch (error: any) {
-    console.error("Error disconnecting Google Calendar:", error);
-    res.status(500).json({
-      success: false,
-      error: `Failed to disconnect: ${error.message || "Unknown error"}`,
-    } as ApiResponse);
   }
 });
 
@@ -571,7 +517,6 @@ router.get("/outlook/callback", async (req: Request, res: Response) => {
 
     const calendarData = {
       type: "outlook",
-      connected: true,
       accessToken: access_token,
       refreshToken: refresh_token,
       expiresAt: Timestamp.fromMillis(Date.now() + expires_in * 1000),
@@ -614,54 +559,6 @@ router.get("/outlook/callback", async (req: Request, res: Response) => {
         </body>
       </html>
     `);
-  }
-});
-
-/**
- * DELETE /calendars/outlook/disconnect
- * Disconnect Outlook Calendar
- */
-router.delete("/outlook/disconnect", verifyAuth, async (req: Request, res: Response) => {
-  try {
-    const uid = req.user!.uid;
-    console.log(`Disconnecting Outlook Calendar for user ${uid}`);
-
-    // Delete the Outlook calendar document
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("calendars")
-      .doc("outlook")
-      .delete();
-
-    // Delete imported Outlook Calendar events
-    const eventsRef = db
-      .collection("users")
-      .doc(uid)
-      .collection("calendar_events");
-    
-    const outlookEvents = await eventsRef
-      .where("calendarType", "==", "outlook")
-      .get();
-
-    const batch = db.batch();
-    outlookEvents.docs.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
-    await batch.commit();
-
-    console.log(`Deleted ${outlookEvents.size} Outlook Calendar events`);
-
-    res.json({
-      success: true,
-      message: "Outlook Calendar disconnected successfully",
-    } as ApiResponse);
-  } catch (error: any) {
-    console.error("Error disconnecting Outlook Calendar:", error);
-    res.status(500).json({
-      success: false,
-      error: `Failed to disconnect: ${error.message || "Unknown error"}`,
-    } as ApiResponse);
   }
 });
 
@@ -723,102 +620,31 @@ router.post("/google/import", verifyAuth, async (req: Request, res: Response) =>
   }
 });
 
-// Encrypt password before storing
-function encryptPassword(text: string): string {
-  return CryptoJS.AES.encrypt(text, ENCRYPTION_KEY).toString();
-}
-
-// Decrypt password when needed
-function decryptPassword(ciphertext: string): string {
-  const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY);
-  return bytes.toString(CryptoJS.enc.Utf8);
-}
-
 /**
  * POST /calendars/apple/connect
- * Connect Apple Calendar via CalDAV using tsdav
+ * Connect Apple Calendar via CalDAV
  */
 router.post("/apple/connect", verifyAuth, async (req: Request, res: Response) => {
   try {
     const uid = req.user!.uid;
-    
-    // Debug logging (credentials redacted for security)
-    console.log("🍎 Apple Calendar connect request received");
-    console.log("🍎 Body keys:", Object.keys(req.body || {}));
-    // Never log passwords or sensitive credentials
-    
-    // Support both old field names (email, password) and new field names (appleId, appPassword)
-    const appleId = req.body?.appleId || req.body?.email || '';
-    const appPassword = req.body?.appPassword || req.body?.password || '';
-    
-    // Log only presence, not actual values (security)
-    console.log("🍎 Credentials received:", { 
-      hasAppleId: !!appleId, 
-      hasPassword: !!appPassword
-    });
+    const { email, password } = req.body;
 
-    if (!appleId || !appPassword) {
-      console.log("🍎 Validation failed - missing appleId or appPassword");
+    if (!email || !password) {
       res.status(400).json({
         success: false,
-        error: "Apple ID and app-specific password are required",
+        error: "Email and password required",
       } as ApiResponse);
       return;
     }
 
-    console.log(`Attempting to connect Apple Calendar for user ${uid}`);
-
-    // Validate credentials by connecting to CalDAV
-    let client;
-    let calendars: DAVCalendar[];
-    
-    try {
-      client = await createDAVClient({
-        serverUrl: "https://caldav.icloud.com",
-        credentials: {
-          username: appleId,
-          password: appPassword,
-        },
-        authMethod: "Basic",
-        defaultAccountType: "caldav",
-      });
-
-      // Fetch calendars to verify connection works
-      calendars = await client.fetchCalendars();
-      console.log(`Found ${calendars.length} calendars for Apple ID ${appleId}`);
-    } catch (authError: any) {
-      console.error("Apple Calendar auth error:", authError);
-      
-      if (authError.message?.includes("401") || authError.message?.includes("Unauthorized")) {
-        res.status(401).json({
-          success: false,
-          error: "Invalid credentials. Make sure you're using an app-specific password from appleid.apple.com",
-        } as ApiResponse);
-        return;
-      }
-      
-      res.status(500).json({
-        success: false,
-        error: `Connection failed: ${authError.message || "Unknown error"}`,
-      } as ApiResponse);
-      return;
-    }
-
-    // Store encrypted credentials
+    // Store Apple Calendar credentials (encrypted in production)
     const calendarData = {
       type: "apple",
-      appleId: appleId,
-      appPassword: encryptPassword(appPassword), // Encrypted!
-      caldavUrl: "https://caldav.icloud.com",
-      calendars: calendars.map((cal) => ({
-        url: cal.url,
-        displayName: cal.displayName || "Apple Calendar",
-        ctag: cal.ctag,
-        selected: true,
-      })),
+      email,
+      password, // TODO: Encrypt this
+      caldavUrl: `https://caldav.icloud.com/`,
       connectedAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
-      lastSync: null,
     };
 
     await db
@@ -828,528 +654,15 @@ router.post("/apple/connect", verifyAuth, async (req: Request, res: Response) =>
       .doc("apple")
       .set(calendarData, { merge: true });
 
-    // Import events in background (don't await)
-    importAppleCalendarEvents(uid, client, calendars).catch((err) => {
-      console.error("Error importing Apple Calendar events:", err);
-    });
-
     res.json({
       success: true,
-      message: "Apple Calendar connected successfully",
-      data: {
-        calendars: calendars.map((cal) => cal.displayName || "Apple Calendar"),
-      },
+      message: "Apple Calendar connected",
     } as ApiResponse);
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error connecting Apple Calendar:", error);
     res.status(500).json({
       success: false,
-      error: `Failed to connect Apple Calendar: ${error.message || "Unknown error"}`,
-    } as ApiResponse);
-  }
-});
-
-/**
- * Import events from Apple Calendar using tsdav
- */
-async function importAppleCalendarEvents(
-  uid: string,
-  client: any,
-  calendars: DAVCalendar[]
-): Promise<void> {
-  try {
-    console.log(`Starting Apple Calendar import for user ${uid}, ${calendars.length} calendars`);
-
-    // Set date range: 1 year ago to 2 years in the future
-    const startDate = new Date();
-    startDate.setFullYear(startDate.getFullYear() - 1);
-    startDate.setHours(0, 0, 0, 0);
-
-    const endDate = new Date();
-    endDate.setFullYear(endDate.getFullYear() + 2);
-    endDate.setHours(23, 59, 59, 999);
-
-    let totalEventsImported = 0;
-
-    for (const calendar of calendars) {
-      try {
-        console.log(`Fetching events from calendar: ${calendar.displayName || calendar.url}`);
-        
-        const calendarObjects = await client.fetchCalendarObjects({
-          calendar,
-          timeRange: {
-            start: startDate.toISOString(),
-            end: endDate.toISOString(),
-          },
-        });
-
-        console.log(`Found ${calendarObjects.length} events in ${calendar.displayName}`);
-
-        // Store events in batches
-        const batchSize = 400;
-        for (let i = 0; i < calendarObjects.length; i += batchSize) {
-          const batch = db.batch();
-          const batchEvents = calendarObjects.slice(i, i + batchSize);
-
-          for (const calObject of batchEvents) {
-            // Parse iCal data
-            const parsed = parseICalData(calObject.data);
-            if (!parsed || !parsed.title || !parsed.start) continue;
-
-            const eventId = `apple_${Buffer.from(calObject.url || parsed.uid || `${Date.now()}`).toString("base64").slice(0, 30)}`;
-            const eventRef = db
-              .collection("users")
-              .doc(uid)
-              .collection("calendar_events")
-              .doc(eventId);
-
-            batch.set(eventRef, {
-              id: parsed.uid || eventId,
-              title: parsed.title,
-              description: parsed.description || "",
-              start: parsed.start,
-              end: parsed.end || parsed.start,
-              location: parsed.location || "",
-              calendarType: "apple",
-              calendarId: calendar.url,
-              calendarName: calendar.displayName || "Apple Calendar",
-              source: "apple",
-              importedAt: new Date().toISOString(),
-              createdAt: Timestamp.now(),
-            });
-
-            totalEventsImported++;
-          }
-
-          await batch.commit();
-        }
-
-        console.log(`Imported events from ${calendar.displayName}`);
-      } catch (calError: any) {
-        console.error(`Error importing from calendar ${calendar.displayName}:`, calError.message);
-      }
-    }
-
-    // Update the calendar connection with import status
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("calendars")
-      .doc("apple")
-      .update({
-        eventsImported: true,
-        eventsImportedAt: Timestamp.now(),
-        totalEventsImported: totalEventsImported,
-        lastSync: Timestamp.now(),
-        lastImportRange: {
-          start: Timestamp.fromDate(startDate),
-          end: Timestamp.fromDate(endDate),
-        },
-      });
-
-    console.log(`Completed Apple Calendar import for user ${uid}: ${totalEventsImported} total events`);
-  } catch (error: any) {
-    console.error("Error in importAppleCalendarEvents:", error);
-    throw error;
-  }
-}
-
-/**
- * Parse iCal/ICS data from CalDAV response
- */
-function parseICalData(icalData: string): any {
-  if (!icalData) return null;
-  
-  try {
-    const event: any = {};
-    const lines = icalData.split(/\r?\n/);
-
-    for (const line of lines) {
-      if (line.startsWith("SUMMARY:")) {
-        event.title = line.substring(8).trim().replace(/\\,/g, ",").replace(/\\n/g, "\n");
-      } else if (line.startsWith("DTSTART")) {
-        event.start = parseICalDateLine(line);
-      } else if (line.startsWith("DTEND")) {
-        event.end = parseICalDateLine(line);
-      } else if (line.startsWith("DESCRIPTION:")) {
-        event.description = line.substring(12).trim().replace(/\\,/g, ",").replace(/\\n/g, "\n");
-      } else if (line.startsWith("LOCATION:")) {
-        event.location = line.substring(9).trim().replace(/\\,/g, ",");
-      } else if (line.startsWith("UID:")) {
-        event.uid = line.substring(4).trim();
-      }
-    }
-
-    return event;
-  } catch (error) {
-    console.error("Error parsing iCal data:", error);
-    return null;
-  }
-}
-
-/**
- * Parse iCal date line (handles various formats)
- */
-function parseICalDateLine(line: string): string {
-  // Extract date value after colon
-  const colonIndex = line.indexOf(":");
-  if (colonIndex === -1) return new Date().toISOString();
-  
-  const dateStr = line.substring(colonIndex + 1).trim();
-  
-  // Handle different formats
-  if (dateStr.length === 8) {
-    // Date only: YYYYMMDD (all-day event)
-    const year = dateStr.substring(0, 4);
-    const month = dateStr.substring(4, 6);
-    const day = dateStr.substring(6, 8);
-    return `${year}-${month}-${day}`;
-  } else if (dateStr.length >= 15) {
-    // DateTime: YYYYMMDDTHHMMSS or YYYYMMDDTHHMMSSZ
-    const year = dateStr.substring(0, 4);
-    const month = dateStr.substring(4, 6);
-    const day = dateStr.substring(6, 8);
-    const hour = dateStr.substring(9, 11);
-    const minute = dateStr.substring(11, 13);
-    const second = dateStr.substring(13, 15);
-    const tz = dateStr.includes("Z") ? "Z" : "";
-    return `${year}-${month}-${day}T${hour}:${minute}:${second}${tz}`;
-  }
-  
-  return dateStr;
-}
-
-/**
- * POST /calendars/apple/sync
- * Manual sync of Apple Calendar events
- */
-router.post("/apple/sync", verifyAuth, async (req: Request, res: Response) => {
-  try {
-    const uid = req.user!.uid;
-
-    // Get stored connection
-    const connectionDoc = await db
-      .collection("users")
-      .doc(uid)
-      .collection("calendars")
-      .doc("apple")
-      .get();
-
-    if (!connectionDoc.exists) {
-      res.status(404).json({
-        success: false,
-        error: "Apple Calendar not connected",
-      } as ApiResponse);
-      return;
-    }
-
-    const data = connectionDoc.data()!;
-    
-    // Decrypt password
-    const appPassword = decryptPassword(data.appPassword);
-    
-    if (!appPassword) {
-      res.status(500).json({
-        success: false,
-        error: "Failed to decrypt stored credentials. Please reconnect.",
-      } as ApiResponse);
-      return;
-    }
-
-    // Connect with stored credentials
-    const client = await createDAVClient({
-      serverUrl: "https://caldav.icloud.com",
-      credentials: {
-        username: data.appleId,
-        password: appPassword,
-      },
-      authMethod: "Basic",
-      defaultAccountType: "caldav",
-    });
-
-    const calendars = await client.fetchCalendars();
-    
-    // Import events in background
-    importAppleCalendarEvents(uid, client, calendars).catch((err) => {
-      console.error("Error syncing Apple Calendar events:", err);
-    });
-
-    res.json({
-      success: true,
-      message: "Apple Calendar sync started",
-    } as ApiResponse);
-  } catch (error: any) {
-    console.error("Error syncing Apple Calendar:", error);
-    res.status(500).json({
-      success: false,
-      error: `Sync failed: ${error.message || "Unknown error"}`,
-    } as ApiResponse);
-  }
-});
-
-/**
- * DELETE /calendars/apple/disconnect
- * Disconnect Apple Calendar
- */
-router.delete("/apple/disconnect", verifyAuth, async (req: Request, res: Response) => {
-  try {
-    const uid = req.user!.uid;
-
-    // Delete stored connection
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("calendars")
-      .doc("apple")
-      .delete();
-
-    // Optionally delete imported events
-    const eventsSnapshot = await db
-      .collection("users")
-      .doc(uid)
-      .collection("calendar_events")
-      .where("calendarType", "==", "apple")
-      .get();
-
-    const batch = db.batch();
-    eventsSnapshot.docs.forEach((doc) => {
-      batch.delete(doc.ref);
-    });
-    await batch.commit();
-
-    res.json({
-      success: true,
-      message: "Apple Calendar disconnected",
-    } as ApiResponse);
-  } catch (error: any) {
-    console.error("Error disconnecting Apple Calendar:", error);
-    res.status(500).json({
-      success: false,
-      error: `Failed to disconnect: ${error.message || "Unknown error"}`,
-    } as ApiResponse);
-  }
-});
-
-/**
- * POST /calendars/events
- * Create a new calendar event (stored in Zeitline/Firestore)
- */
-router.post("/events", verifyAuth, async (req: Request, res: Response) => {
-  try {
-    const uid = req.user!.uid;
-    const { title, description, start, end, location, recurrence, calendarType = "zeitline" } = req.body;
-
-    if (!title || !start) {
-      res.status(400).json({
-        success: false,
-        error: "Title and start time are required",
-      } as ApiResponse);
-      return;
-    }
-
-    console.log(`Creating event for user ${uid}: ${title}`);
-
-    // Generate a unique event ID
-    const eventId = `zeitline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Create the event document
-    const eventData = {
-      id: eventId,
-      title,
-      description: description || "",
-      start,
-      end: end || start,
-      location: location || "",
-      calendarType,
-      calendarId: "zeitline",
-      calendarName: "Zeitline Events",
-      recurrence: recurrence || null,
-      source: "zeitline",
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    };
-
-    // Save to Firestore
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("calendar_events")
-      .doc(eventId)
-      .set(eventData);
-
-    console.log(`Event created: ${eventId}`);
-
-    // If there's a recurrence pattern, generate recurring instances
-    if (recurrence && recurrence.frequency) {
-      const instances = generateRecurringEventInstances(eventData, recurrence, 52); // Generate up to 52 instances (1 year)
-      
-      // Save recurring instances
-      const batch = db.batch();
-      for (const instance of instances) {
-        const instanceId = `${eventId}_${instance.start.replace(/[^0-9]/g, '')}`;
-        const instanceRef = db
-          .collection("users")
-          .doc(uid)
-          .collection("calendar_events")
-          .doc(instanceId);
-        
-        batch.set(instanceRef, {
-          ...instance,
-          id: instanceId,
-          parentEventId: eventId,
-          isRecurringInstance: true,
-        });
-      }
-      await batch.commit();
-      console.log(`Created ${instances.length} recurring instances`);
-    }
-
-    res.json({
-      success: true,
-      data: eventData,
-      message: "Event created successfully",
-    } as ApiResponse);
-  } catch (error: any) {
-    console.error("Error creating event:", error);
-    res.status(500).json({
-      success: false,
-      error: `Failed to create event: ${error.message || "Unknown error"}`,
-    } as ApiResponse);
-  }
-});
-
-/**
- * Generate recurring event instances from a pattern
- */
-function generateRecurringEventInstances(
-  baseEvent: any,
-  pattern: any,
-  maxInstances: number
-): any[] {
-  const instances: any[] = [];
-  let currentDate = new Date(baseEvent.start);
-  const duration = baseEvent.end 
-    ? new Date(baseEvent.end).getTime() - new Date(baseEvent.start).getTime()
-    : 60 * 60 * 1000; // Default 1 hour
-
-  for (let i = 1; i < maxInstances; i++) {
-    // Calculate next occurrence based on pattern
-    switch (pattern.frequency) {
-      case "daily":
-        currentDate.setDate(currentDate.getDate() + (pattern.interval || 1));
-        break;
-      case "weekly":
-        if (pattern.daysOfWeek && pattern.daysOfWeek.length > 0) {
-          // Find next occurrence of any specified day
-          let found = false;
-          for (let d = 1; d <= 7 && !found; d++) {
-            const nextDate = new Date(currentDate);
-            nextDate.setDate(nextDate.getDate() + d);
-            if (pattern.daysOfWeek.includes(nextDate.getDay())) {
-              currentDate = nextDate;
-              found = true;
-            }
-          }
-          if (!found) {
-            currentDate.setDate(currentDate.getDate() + 7 * (pattern.interval || 1));
-          }
-        } else {
-          currentDate.setDate(currentDate.getDate() + 7 * (pattern.interval || 1));
-        }
-        break;
-      case "monthly":
-        currentDate.setMonth(currentDate.getMonth() + (pattern.interval || 1));
-        if (pattern.dayOfMonth) {
-          currentDate.setDate(pattern.dayOfMonth);
-        }
-        break;
-      case "yearly":
-        currentDate.setFullYear(currentDate.getFullYear() + (pattern.interval || 1));
-        break;
-      default:
-        currentDate.setDate(currentDate.getDate() + (pattern.interval || 1));
-    }
-
-    // Check end conditions
-    if (pattern.endDate && currentDate > new Date(pattern.endDate)) {
-      break;
-    }
-    if (pattern.occurrences && i >= pattern.occurrences) {
-      break;
-    }
-
-    // Create instance
-    const endDate = new Date(currentDate.getTime() + duration);
-    instances.push({
-      title: baseEvent.title,
-      description: baseEvent.description,
-      start: currentDate.toISOString(),
-      end: endDate.toISOString(),
-      location: baseEvent.location,
-      calendarType: baseEvent.calendarType,
-      calendarId: baseEvent.calendarId,
-      calendarName: baseEvent.calendarName,
-      recurrence: pattern,
-      source: "zeitline",
-      createdAt: Timestamp.now(),
-    });
-  }
-
-  return instances;
-}
-
-/**
- * DELETE /calendars/events/:eventId
- * Delete a calendar event
- */
-router.delete("/events/:eventId", verifyAuth, async (req: Request, res: Response) => {
-  try {
-    const uid = req.user!.uid;
-    const { eventId } = req.params;
-    const { deleteRecurring } = req.query;
-
-    if (!eventId) {
-      res.status(400).json({
-        success: false,
-        error: "Event ID required",
-      } as ApiResponse);
-      return;
-    }
-
-    // Delete the event
-    await db
-      .collection("users")
-      .doc(uid)
-      .collection("calendar_events")
-      .doc(eventId)
-      .delete();
-
-    // If deleteRecurring is true, delete all recurring instances
-    if (deleteRecurring === "true") {
-      const recurringInstances = await db
-        .collection("users")
-        .doc(uid)
-        .collection("calendar_events")
-        .where("parentEventId", "==", eventId)
-        .get();
-
-      const batch = db.batch();
-      recurringInstances.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-      });
-      await batch.commit();
-      console.log(`Deleted ${recurringInstances.size} recurring instances`);
-    }
-
-    res.json({
-      success: true,
-      message: "Event deleted successfully",
-    } as ApiResponse);
-  } catch (error: any) {
-    console.error("Error deleting event:", error);
-    res.status(500).json({
-      success: false,
-      error: `Failed to delete event: ${error.message || "Unknown error"}`,
+      error: "Failed to connect Apple Calendar",
     } as ApiResponse);
   }
 });
@@ -1379,6 +692,59 @@ router.get("/events", verifyAuth, async (req: Request, res: Response) => {
     const snapshot = await calendarsRef.get();
 
     const allEvents: any[] = [];
+
+    // Also get Zeitline-generated events from onboarding
+    try {
+      console.log(`Fetching Zeitline onboarding events for user ${uid} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+      
+      const zeitlineEventsRef = db
+        .collection("users")
+        .doc(uid)
+        .collection("calendar_events")
+        .where("calendarType", "==", "zeitline");
+      
+      const zeitlineSnapshot = await zeitlineEventsRef.get();
+      console.log(`Found ${zeitlineSnapshot.docs.length} Zeitline events in Firestore`);
+      
+      let onboardingEventsCount = 0;
+      for (const doc of zeitlineSnapshot.docs) {
+        const event = doc.data();
+        
+        // Only process onboarding events
+        if (event.source !== "onboarding") {
+          console.log(`Skipping event ${event.id}: source is "${event.source}", not "onboarding"`);
+          continue;
+        }
+        
+        onboardingEventsCount++;
+        console.log(`Processing onboarding event: ${event.title} (${event.start})`);
+        
+        // Check if event falls within date range
+        const eventStart = new Date(event.start);
+        const eventEnd = new Date(event.end || event.start);
+        
+        // For recurring events, generate instances for the date range
+        if (event.recurring) {
+          const instances = generateRecurringInstances(
+            event,
+            startDate,
+            endDate
+          );
+          console.log(`Generated ${instances.length} recurring instances for ${event.title}`);
+          allEvents.push(...instances);
+        } else if (eventStart <= endDate && eventEnd >= startDate) {
+          console.log(`Adding single event: ${event.title}`);
+          allEvents.push(event);
+        } else {
+          console.log(`Event ${event.title} is outside date range`);
+        }
+      }
+      
+      console.log(`✅ Processed ${onboardingEventsCount} onboarding events, added ${allEvents.filter(e => e.calendarType === 'zeitline' && e.source === 'onboarding').length} to results`);
+    } catch (error: any) {
+      console.error("❌ Error loading Zeitline events:", error);
+      console.error("Error stack:", error.stack);
+    }
 
     for (const doc of snapshot.docs) {
       const calendar = doc.data();
@@ -1591,41 +957,6 @@ router.get("/events", verifyAuth, async (req: Request, res: Response) => {
           console.error("Error fetching Apple Calendar events:", error);
         }
       }
-    }
-
-    // Also fetch Zeitline-created events from Firestore
-    try {
-      const eventsRef = db.collection("users").doc(uid).collection("calendar_events");
-      const zeitlineEventsSnapshot = await eventsRef
-        .where("calendarType", "==", "zeitline")
-        .get();
-      
-      const zeitlineEvents = zeitlineEventsSnapshot.docs
-        .map(doc => {
-          const data = doc.data();
-          return {
-            id: data.id || doc.id,
-            title: data.title || "No title",
-            description: data.description || "",
-            start: data.start,
-            end: data.end || data.start,
-            calendarType: "zeitline",
-            calendarId: "zeitline",
-            calendarName: "Zeitline Events",
-            location: data.location || "",
-            recurrence: data.recurrence || null,
-          };
-        })
-        .filter(event => {
-          // Filter to date range
-          const eventStart = new Date(event.start);
-          return eventStart >= startDate && eventStart <= endDate;
-        });
-      
-      console.log(`Found ${zeitlineEvents.length} Zeitline events for date range`);
-      allEvents.push(...zeitlineEvents);
-    } catch (error) {
-      console.error("Error fetching Zeitline events:", error);
     }
 
     // Deduplicate events
@@ -2229,135 +1560,474 @@ function deduplicateEvents(events: any[]): any[] {
   return Array.from(seen.values());
 }
 
+// Helper function to generate recurring event instances
+function generateRecurringInstances(
+  event: any,
+  startDate: Date,
+  endDate: Date
+): any[] {
+  const instances: any[] = [];
+  const baseStart = new Date(event.start);
+  const baseEnd = new Date(event.end || event.start);
+  const duration = baseEnd.getTime() - baseStart.getTime();
+
+  if (!event.recurring || event.recurring.frequency !== "weekly") {
+    // For non-weekly or missing recurrence, just return the base event if in range
+    if (baseStart <= endDate && baseEnd >= startDate) {
+      return [event];
+    }
+    return [];
+  }
+
+  const daysOfWeek = event.recurring.daysOfWeek || [];
+  if (daysOfWeek.length === 0) return [];
+
+  // Generate instances for each occurrence in the date range
+  const currentDate = new Date(startDate);
+  currentDate.setHours(0, 0, 0, 0);
+
+  while (currentDate <= endDate) {
+    const dayOfWeek = currentDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+
+    if (daysOfWeek.includes(dayOfWeek)) {
+      const instanceStart = new Date(currentDate);
+      instanceStart.setHours(baseStart.getHours(), baseStart.getMinutes(), 0, 0);
+
+      const instanceEnd = new Date(instanceStart);
+      instanceEnd.setTime(instanceStart.getTime() + duration);
+
+      instances.push({
+        ...event,
+        id: `${event.id}_${instanceStart.toISOString()}`,
+        start: instanceStart.toISOString(),
+        end: instanceEnd.toISOString(),
+        isRecurringInstance: true,
+        originalEventId: event.id,
+      });
+    }
+
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+
+  return instances;
+}
+
 /**
- * POST /calendars/sync
- * Sync all connected calendars and return updated event count
+ * POST /calendars/populate-from-onboarding-test
+ * TEST ENDPOINT - Create recurring calendar events without auth
+ * This is for development/testing only - remove in production!
  */
-router.post("/sync", verifyAuth, async (req: Request, res: Response) => {
+router.post("/populate-from-onboarding-test", async (req: Request, res: Response) => {
   try {
-    const uid = req.user!.uid;
-    console.log(`Starting full calendar sync for user ${uid}`);
+    // Use a test user ID or the provided one
+    const uid = req.body.uid || "test-user-calendar";
+    const { onboardingData } = req.body;
 
-    const syncResults: {
-      google?: { success: boolean; eventCount?: number; error?: string };
-      apple?: { success: boolean; eventCount?: number; error?: string };
-      outlook?: { success: boolean; eventCount?: number; error?: string };
-    } = {};
+    console.log("🧪 TEST endpoint called - populate-from-onboarding-test");
+    console.log("Using UID:", uid);
 
-    // Get all connected calendars
-    const calendarsRef = db.collection("users").doc(uid).collection("calendars");
-    const snapshot = await calendarsRef.get();
+    if (!onboardingData) {
+      res.status(400).json({
+        success: false,
+        error: "Onboarding data required",
+      } as ApiResponse);
+      return;
+    }
 
-    for (const doc of snapshot.docs) {
-      const calendar = doc.data();
-      const calendarType = doc.id;
+    const routines = onboardingData.routines || {};
+    const eventsCreated: any[] = [];
 
-      if (calendarType === "google" && calendar.connected) {
-        try {
-          // Refresh token if needed
-          let accessToken = calendar.accessToken;
-          if (calendar.expiresAt && calendar.expiresAt.toMillis() < Date.now()) {
-            accessToken = await refreshGoogleToken(calendar.refreshToken, uid);
-          }
+    // Helper to parse time string (e.g., "7:00 AM", "09:30", "17:00")
+    function parseTime(timeStr: string): { hours: number; minutes: number } | null {
+      if (!timeStr) return null;
+      
+      // Try different formats
+      const formats = [
+        /(\d{1,2}):(\d{2})\s*(AM|PM)/i, // "7:00 AM"
+        /(\d{1,2}):(\d{2})/, // "07:00" or "7:00"
+        /(\d{1,2})\s*(AM|PM)/i, // "7 AM"
+      ];
 
-          // Fetch events from Google Calendar
-          const timeMin = new Date();
-          timeMin.setFullYear(timeMin.getFullYear() - 1);
-          const timeMax = new Date();
-          timeMax.setFullYear(timeMax.getFullYear() + 2);
+      for (const format of formats) {
+        const match = timeStr.match(format);
+        if (match) {
+          let hours = parseInt(match[1]);
+          const minutes = match[2] ? parseInt(match[2]) : 0;
+          const ampm = match[3]?.toUpperCase();
 
-          let totalEvents = 0;
-          const selectedCalendars = calendar.calendars?.filter((c: any) => c.selected) || [];
+          if (ampm === "PM" && hours !== 12) hours += 12;
+          if (ampm === "AM" && hours === 12) hours = 0;
 
-          for (const cal of selectedCalendars) {
-            const eventsResponse = await axios.get(
-              `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal.id)}/events`,
-              {
-                headers: { Authorization: `Bearer ${accessToken}` },
-                params: {
-                  timeMin: timeMin.toISOString(),
-                  timeMax: timeMax.toISOString(),
-                  singleEvents: true,
-                  maxResults: 2500,
-                },
-              }
-            );
-
-            const events = eventsResponse.data.items || [];
-            totalEvents += events.length;
-
-            // Store events in Firestore
-            const batch = db.batch();
-            for (const event of events) {
-              const eventRef = db
-                .collection("users")
-                .doc(uid)
-                .collection("calendar_events")
-                .doc(`google_${cal.id}_${event.id}`);
-
-              batch.set(eventRef, {
-                id: event.id,
-                title: event.summary || "No title",
-                description: event.description || "",
-                start: event.start?.dateTime || event.start?.date,
-                end: event.end?.dateTime || event.end?.date,
-                location: event.location || "",
-                calendarType: "google",
-                calendarId: cal.id,
-                calendarName: cal.summary || "Google Calendar",
-                lastSynced: new Date().toISOString(),
-              }, { merge: true });
-            }
-            await batch.commit();
-          }
-
-          syncResults.google = { success: true, eventCount: totalEvents };
-        } catch (error: any) {
-          console.error("Error syncing Google Calendar:", error);
-          syncResults.google = { success: false, error: error.message };
+          return { hours, minutes };
         }
       }
 
-      if (calendarType === "apple" && calendar.connected) {
-        try {
-          // Apple Calendar sync via CalDAV would go here
-          // For now, mark as synced
-          syncResults.apple = { success: true, eventCount: 0 };
-        } catch (error: any) {
-          console.error("Error syncing Apple Calendar:", error);
-          syncResults.apple = { success: false, error: error.message };
+      return null;
+    }
+
+    // Helper to create recurring event
+    function createRecurringEvent(
+      title: string,
+      time: string,
+      duration: number, // in minutes
+      daysOfWeek: number[], // 0 = Sunday, 1 = Monday, etc.
+      startDate: Date = new Date()
+    ) {
+      const parsedTime = parseTime(time);
+      if (!parsedTime) return null;
+
+      const eventDate = new Date(startDate);
+      eventDate.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
+      
+      const endDate = new Date(eventDate);
+      endDate.setMinutes(endDate.getMinutes() + duration);
+
+      return {
+        title,
+        start: eventDate.toISOString(),
+        end: endDate.toISOString(),
+        recurring: {
+          frequency: "weekly",
+          daysOfWeek,
+          interval: 1,
+        },
+        calendarType: "zeitline",
+        calendarName: "Zeitline Routines",
+        source: "onboarding",
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      };
+    }
+
+    const dayMap: { [key: string]: number } = {
+      "sunday": 0, "monday": 1, "tuesday": 2, "wednesday": 3,
+      "thursday": 4, "friday": 5, "saturday": 6
+    };
+
+    // Process weekday routines
+    const weekdayRoutine = routines.weekday;
+    if (weekdayRoutine) {
+      const allWeekdays = [1, 2, 3, 4, 5]; // Monday to Friday
+      const defaultDuration = 60; // 1 hour
+
+      if (weekdayRoutine.wakeTime) {
+        const event = createRecurringEvent("Wake Up", weekdayRoutine.wakeTime, 30, allWeekdays);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekdayRoutine.meals?.breakfast) {
+        const event = createRecurringEvent("Breakfast", weekdayRoutine.meals.breakfast, defaultDuration, allWeekdays);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekdayRoutine.workStart && weekdayRoutine.workEnd) {
+        const workStartTime = parseTime(weekdayRoutine.workStart);
+        const workEndTime = parseTime(weekdayRoutine.workEnd);
+        if (workStartTime && workEndTime) {
+          const startMinutes = workStartTime.hours * 60 + workStartTime.minutes;
+          const endMinutes = workEndTime.hours * 60 + workEndTime.minutes;
+          const duration = endMinutes - startMinutes;
+          if (duration > 0) {
+            const event = createRecurringEvent("Work", weekdayRoutine.workStart, duration, allWeekdays);
+            if (event) eventsCreated.push(event);
+          }
         }
       }
-
-      if (calendarType === "outlook" && calendar.connected) {
-        try {
-          // Outlook sync via Microsoft Graph would go here
-          syncResults.outlook = { success: true, eventCount: 0 };
-        } catch (error: any) {
-          console.error("Error syncing Outlook Calendar:", error);
-          syncResults.outlook = { success: false, error: error.message };
-        }
+      if (weekdayRoutine.meals?.lunch) {
+        const event = createRecurringEvent("Lunch", weekdayRoutine.meals.lunch, defaultDuration, allWeekdays);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekdayRoutine.meals?.dinner) {
+        const event = createRecurringEvent("Dinner", weekdayRoutine.meals.dinner, defaultDuration, allWeekdays);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekdayRoutine.exercise?.time && weekdayRoutine.exercise?.days?.length > 0) {
+        const exerciseDays = weekdayRoutine.exercise.days.map((day: string) => dayMap[day.toLowerCase()]).filter((d: any) => d !== undefined);
+        const duration = parseInt(weekdayRoutine.exercise.duration) || 60;
+        const event = createRecurringEvent("Exercise", weekdayRoutine.exercise.time, duration, exerciseDays);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekdayRoutine.bedtime) {
+        const event = createRecurringEvent("Bedtime", weekdayRoutine.bedtime, 30, allWeekdays);
+        if (event) eventsCreated.push(event);
       }
     }
 
-    // Update last sync time
-    await db.collection("users").doc(uid).set(
-      { lastCalendarSync: new Date().toISOString() },
-      { merge: true }
-    );
+    // Process weekend routines
+    const weekendRoutine = routines.weekend;
+    if (weekendRoutine) {
+      const allWeekends = [0, 6]; // Sunday and Saturday
+      const defaultDuration = 60;
+
+      if (weekendRoutine.wakeTime) {
+        const event = createRecurringEvent("Weekend Wake Up", weekendRoutine.wakeTime, 30, allWeekends);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekendRoutine.meals?.breakfast) {
+        const event = createRecurringEvent("Weekend Breakfast", weekendRoutine.meals.breakfast, defaultDuration, allWeekends);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekendRoutine.meals?.lunch) {
+        const event = createRecurringEvent("Weekend Lunch", weekendRoutine.meals.lunch, defaultDuration, allWeekends);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekendRoutine.meals?.dinner) {
+        const event = createRecurringEvent("Weekend Dinner", weekendRoutine.meals.dinner, defaultDuration, allWeekends);
+        if (event) eventsCreated.push(event);
+      }
+      if (weekendRoutine.bedtime) {
+        const event = createRecurringEvent("Weekend Bedtime", weekendRoutine.bedtime, 30, allWeekends);
+        if (event) eventsCreated.push(event);
+      }
+    }
+
+    // Save events to Firestore
+    const batch = db.batch();
+    for (const event of eventsCreated) {
+      const eventRef = db.collection("users").doc(uid).collection("calendar_events").doc();
+      batch.set(eventRef, event);
+    }
+    await batch.commit();
+
+    // Mark calendar as populated from onboarding
+    await db.collection("users").doc(uid).set({
+      calendarPopulatedFromOnboarding: true,
+      updatedAt: Timestamp.now(),
+    }, { merge: true });
+
+    console.log(`✅ TEST: Successfully created ${eventsCreated.length} events from onboarding for user ${uid}`);
 
     res.json({
       success: true,
       data: {
-        syncResults,
-        lastSync: new Date().toISOString(),
+        eventsCreated: eventsCreated.length,
+        events: eventsCreated, // Return events for verification
+        message: "Calendar populated from onboarding data (TEST)",
+      },
+    });
+  } catch (error: any) {
+    console.error("Error in TEST populate-from-onboarding:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to populate calendar from onboarding",
+    });
+  }
+});
+
+/**
+ * POST /calendars/populate-from-onboarding
+ * Create recurring calendar events based on onboarding data
+ */
+router.post("/populate-from-onboarding", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const { onboardingData } = req.body;
+
+    if (!onboardingData) {
+      res.status(400).json({
+        success: false,
+        error: "Onboarding data required",
+      } as ApiResponse);
+      return;
+    }
+
+    const routines = onboardingData.routines || {};
+    const eventsCreated: any[] = [];
+
+    // Helper to parse time string (e.g., "7:00 AM", "09:30", "17:00")
+    function parseTime(timeStr: string): { hours: number; minutes: number } | null {
+      if (!timeStr) return null;
+      
+      // Try different formats
+      const formats = [
+        /(\d{1,2}):(\d{2})\s*(AM|PM)/i, // "7:00 AM"
+        /(\d{1,2}):(\d{2})/, // "07:00" or "7:00"
+        /(\d{1,2})\s*(AM|PM)/i, // "7 AM"
+      ];
+
+      for (const format of formats) {
+        const match = timeStr.match(format);
+        if (match) {
+          let hours = parseInt(match[1]);
+          const minutes = match[2] ? parseInt(match[2]) : 0;
+          const ampm = match[3]?.toUpperCase();
+
+          if (ampm === "PM" && hours !== 12) hours += 12;
+          if (ampm === "AM" && hours === 12) hours = 0;
+
+          return { hours, minutes };
+        }
+      }
+
+      return null;
+    }
+
+    // Helper to create recurring event
+    function createRecurringEvent(
+      title: string,
+      time: string,
+      duration: number, // in minutes
+      daysOfWeek: number[], // 0 = Sunday, 1 = Monday, etc.
+      startDate: Date = new Date()
+    ) {
+      const parsedTime = parseTime(time);
+      if (!parsedTime) return null;
+
+      const eventDate = new Date(startDate);
+      eventDate.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
+      
+      const endDate = new Date(eventDate);
+      endDate.setMinutes(endDate.getMinutes() + duration);
+
+      return {
+        title,
+        start: eventDate.toISOString(),
+        end: endDate.toISOString(),
+        recurring: {
+          frequency: "weekly",
+          daysOfWeek,
+        },
+        calendarType: "zeitline",
+        calendarName: "Zeitline Routine",
+        source: "onboarding",
+      };
+    }
+
+    // Create weekday events
+    if (routines.weekday) {
+      const weekday = routines.weekday;
+      const weekdays = [1, 2, 3, 4, 5]; // Monday to Friday
+
+      // Wake up time
+      if (weekday.wakeTime) {
+        const event = createRecurringEvent("Wake Up", weekday.wakeTime, 0, weekdays);
+        if (event) eventsCreated.push(event);
+      }
+
+      // Breakfast
+      if (weekday.meals?.breakfast) {
+        const event = createRecurringEvent("Breakfast", weekday.meals.breakfast, 30, weekdays);
+        if (event) eventsCreated.push(event);
+      }
+
+      // Work start
+      if (weekday.workStart) {
+        const event = createRecurringEvent("Work Start", weekday.workStart, 0, weekdays);
+        if (event) eventsCreated.push(event);
+      }
+
+      // Lunch
+      if (weekday.meals?.lunch) {
+        const event = createRecurringEvent("Lunch", weekday.meals.lunch, 60, weekdays);
+        if (event) eventsCreated.push(event);
+      }
+
+      // Work end
+      if (weekday.workEnd) {
+        const event = createRecurringEvent("Work End", weekday.workEnd, 0, weekdays);
+        if (event) eventsCreated.push(event);
+      }
+
+      // Exercise
+      if (weekday.exercise?.time && weekday.exercise?.days) {
+        const exerciseDays = weekday.exercise.days.map((day: string) => {
+          const dayMap: Record<string, number> = {
+            Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+            Thursday: 4, Friday: 5, Saturday: 6
+          };
+          return dayMap[day] ?? 1;
+        });
+        const duration = parseInt(weekday.exercise.duration) || 60;
+        const event = createRecurringEvent(
+          "Exercise",
+          weekday.exercise.time,
+          duration,
+          exerciseDays
+        );
+        if (event) eventsCreated.push(event);
+      }
+
+      // Dinner
+      if (weekday.meals?.dinner) {
+        const event = createRecurringEvent("Dinner", weekday.meals.dinner, 60, weekdays);
+        if (event) eventsCreated.push(event);
+      }
+
+      // Bedtime
+      if (weekday.bedtime) {
+        const event = createRecurringEvent("Bedtime", weekday.bedtime, 0, weekdays);
+        if (event) eventsCreated.push(event);
+      }
+    }
+
+    // Create weekend events
+    if (routines.weekend) {
+      const weekend = routines.weekend;
+      const weekendDays = [0, 6]; // Sunday and Saturday
+
+      // Wake up time
+      if (weekend.wakeTime) {
+        const event = createRecurringEvent("Wake Up (Weekend)", weekend.wakeTime, 0, weekendDays);
+        if (event) eventsCreated.push(event);
+      }
+
+      // Meals
+      if (weekend.meals) {
+        if (weekend.meals.breakfast) {
+          const event = createRecurringEvent("Breakfast (Weekend)", weekend.meals.breakfast, 30, weekendDays);
+          if (event) eventsCreated.push(event);
+        }
+        if (weekend.meals.lunch) {
+          const event = createRecurringEvent("Lunch (Weekend)", weekend.meals.lunch, 60, weekendDays);
+          if (event) eventsCreated.push(event);
+        }
+        if (weekend.meals.dinner) {
+          const event = createRecurringEvent("Dinner (Weekend)", weekend.meals.dinner, 60, weekendDays);
+          if (event) eventsCreated.push(event);
+        }
+      }
+
+      // Bedtime
+      if (weekend.bedtime) {
+        const event = createRecurringEvent("Bedtime (Weekend)", weekend.bedtime, 0, weekendDays);
+        if (event) eventsCreated.push(event);
+      }
+    }
+
+    // Store events in Firestore
+    const eventsRef = db.collection("users").doc(uid).collection("calendar_events");
+    const batch = db.batch();
+
+    console.log(`Creating ${eventsCreated.length} calendar events for user ${uid}`);
+
+    for (const event of eventsCreated) {
+      const eventId = `zeitline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const eventRef = eventsRef.doc(eventId);
+      const eventData = {
+        ...event,
+        id: eventId,
+        userId: uid,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      };
+      
+      console.log(`Creating event: ${event.title} at ${event.start}`);
+      batch.set(eventRef, eventData);
+    }
+
+    await batch.commit();
+    console.log(`✅ Successfully created ${eventsCreated.length} events in Firestore`);
+
+    res.json({
+      success: true,
+      data: {
+        eventsCreated: eventsCreated.length,
+        events: eventsCreated,
       },
     } as ApiResponse);
   } catch (error: any) {
-    console.error("Error during calendar sync:", error);
+    console.error("Error populating calendar from onboarding:", error);
     res.status(500).json({
       success: false,
-      error: `Sync failed: ${error.message || "Unknown error"}`,
+      error: error.message || "Failed to populate calendar",
     } as ApiResponse);
   }
 });

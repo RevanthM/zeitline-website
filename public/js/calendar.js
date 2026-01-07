@@ -7,7 +7,6 @@ let selectedDate = null;
 let calendarEvents = {};
 let connectedCalendars = [];
 let zoomLevel = 0; // 0 = default hourly (max zoom out), 1 = 15-min intervals, 2 = 1-min intervals for 2 hours (max zoom in)
-let calendarEventsUnsubscribe = null; // For real-time listener cleanup
 
 // Auto-detect user's system timezone
 let selectedTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Los_Angeles';
@@ -22,10 +21,98 @@ let calendarColors = {
 };
 
 // Initialize calendar
+// Check and populate calendar from onboarding data
+async function checkAndPopulateFromOnboarding() {
+    try {
+        // Check if onboarding data exists and calendar hasn't been populated yet
+        const onboardingData = localStorage.getItem('zeitline_onboarding_data');
+        const calendarPopulated = localStorage.getItem('zeitline_calendar_populated');
+        
+        if (!onboardingData || calendarPopulated === 'true') {
+            return; // No onboarding data or already populated
+        }
+        
+        const parsed = JSON.parse(onboardingData);
+        const collectedData = parsed.collectedData || {};
+        
+        // Check if we have routine data
+        if (!collectedData.routines && !collectedData.wakeTime && !collectedData.workStartTime) {
+            return; // No routine data to populate
+        }
+        
+        // Wait for auth
+        await waitForAuth();
+        
+        if (typeof firebase === 'undefined' || !firebase.auth) {
+            return;
+        }
+        
+        const user = firebase.auth().currentUser;
+        if (!user) {
+            return; // Not logged in
+        }
+        
+        // Transform data to include routines if not already present
+        const routines = collectedData.routines || {
+            weekday: {
+                wakeTime: collectedData.wakeTimeWeekday || collectedData.wakeTime,
+                bedtime: collectedData.bedtimeWeekday || collectedData.bedtime,
+                workStart: collectedData.workStartTime,
+                workEnd: collectedData.workEndTime,
+                meals: {
+                    breakfast: collectedData.breakfastTime,
+                    lunch: collectedData.lunchTime,
+                    dinner: collectedData.dinnerTime,
+                },
+                exercise: collectedData.exerciseTime ? {
+                    time: collectedData.exerciseTime,
+                    days: collectedData.exerciseDays || [],
+                    duration: collectedData.exerciseDuration || "60",
+                } : null,
+            },
+            weekend: {
+                wakeTime: collectedData.wakeTimeWeekend,
+                bedtime: collectedData.bedtimeWeekend,
+                meals: collectedData.mealTimesWeekend || {},
+            },
+        };
+        
+        const onboardingDataForAPI = {
+            ...collectedData,
+            routines,
+        };
+        
+        // Call API to populate calendar
+        try {
+            const response = await apiCall('/calendars/populate-from-onboarding', {
+                method: 'POST',
+                body: JSON.stringify({ onboardingData: onboardingDataForAPI })
+            });
+            
+            if (response.success) {
+                console.log(`✅ Populated calendar with ${response.data.eventsCreated} events from onboarding`);
+                localStorage.setItem('zeitline_calendar_populated', 'true');
+                
+                // Reload calendar events to show the new ones
+                setTimeout(() => {
+                    loadCalendarEvents();
+                }, 1000);
+            }
+        } catch (error) {
+            console.error('Error populating calendar from onboarding:', error);
+        }
+    } catch (error) {
+        console.error('Error checking onboarding data:', error);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         console.log('Calendar: Initializing...');
         loadUserInfo();
+        
+        // Check if we need to populate calendar from onboarding data
+        await checkAndPopulateFromOnboarding();
         
         // Load timezone preference from localStorage, or use system timezone
         const savedTimezone = localStorage.getItem('calendarTimezone');
@@ -53,9 +140,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Apply saved colors
         applyCalendarColors();
-        
-        // Load last sync info
-        loadLastSyncInfo();
         
         // Render calendar connections immediately (with empty array)
         // Use setTimeout to ensure DOM is fully ready
@@ -109,9 +193,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Check if user signed in with Google and auto-connect calendar
         checkGoogleSignIn();
         
-        // Set up real-time sync for cross-device updates
-        setupRealtimeCalendarSync();
-        
         // Listen for OAuth callback messages
         window.addEventListener('message', async (event) => {
             if (event.data && event.data.type === 'calendar_connected') {
@@ -132,6 +213,91 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.appendChild(errorDiv);
     }
 });
+
+// Check and populate calendar from onboarding data
+async function checkAndPopulateFromOnboarding() {
+    try {
+        // Check if onboarding data exists and calendar hasn't been populated yet
+        const onboardingData = localStorage.getItem('zeitline_onboarding_data');
+        const calendarPopulated = localStorage.getItem('zeitline_calendar_populated');
+        
+        if (!onboardingData || calendarPopulated === 'true') {
+            return; // No onboarding data or already populated
+        }
+        
+        const parsed = JSON.parse(onboardingData);
+        const collectedData = parsed.collectedData || {};
+        
+        // Check if we have routine data
+        if (!collectedData.routines && !collectedData.wakeTime && !collectedData.workStartTime) {
+            return; // No routine data to populate
+        }
+        
+        // Wait for auth
+        await waitForAuth();
+        
+        if (typeof firebase === 'undefined' || !firebase.auth) {
+            return;
+        }
+        
+        const user = firebase.auth().currentUser;
+        if (!user) {
+            return; // Not logged in
+        }
+        
+        // Transform data to include routines if not already present
+        const routines = collectedData.routines || {
+            weekday: {
+                wakeTime: collectedData.wakeTimeWeekday || collectedData.wakeTime,
+                bedtime: collectedData.bedtimeWeekday || collectedData.bedtime,
+                workStart: collectedData.workStartTime,
+                workEnd: collectedData.workEndTime,
+                meals: {
+                    breakfast: collectedData.breakfastTime,
+                    lunch: collectedData.lunchTime,
+                    dinner: collectedData.dinnerTime,
+                },
+                exercise: collectedData.exerciseTime ? {
+                    time: collectedData.exerciseTime,
+                    days: collectedData.exerciseDays || [],
+                    duration: collectedData.exerciseDuration || "60",
+                } : null,
+            },
+            weekend: {
+                wakeTime: collectedData.wakeTimeWeekend,
+                bedtime: collectedData.bedtimeWeekend,
+                meals: collectedData.mealTimesWeekend || {},
+            },
+        };
+        
+        const onboardingDataForAPI = {
+            ...collectedData,
+            routines,
+        };
+        
+        // Call API to populate calendar
+        try {
+            const response = await apiCall('/calendars/populate-from-onboarding', {
+                method: 'POST',
+                body: JSON.stringify({ onboardingData: onboardingDataForAPI })
+            });
+            
+            if (response.success) {
+                console.log(`✅ Populated calendar with ${response.data.eventsCreated} events from onboarding`);
+                localStorage.setItem('zeitline_calendar_populated', 'true');
+                
+                // Reload calendar events to show the new ones
+                setTimeout(() => {
+                    loadCalendarEvents();
+                }, 1000);
+            }
+        } catch (error) {
+            console.error('Error populating calendar from onboarding:', error);
+        }
+    } catch (error) {
+        console.error('Error checking onboarding data:', error);
+    }
+}
 
 // Wait for Firebase Auth to be initialized
 function waitForAuth() {
@@ -888,93 +1054,135 @@ async function loadEventsFromJSON() {
     }
 }
 
-/**
- * Deduplicate events on the client side
- * Events are considered duplicates if they have:
- * - Same title (case-insensitive, normalized)
- * - Same start time (within 5 minutes tolerance)
- */
-function deduplicateEventsClient(events) {
-    if (!events || !Array.isArray(events)) return [];
-    
-    const seenById = new Map();
-    const seenByKey = new Map();
-    const TIME_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
-    
-    for (const event of events) {
-        // First, deduplicate by exact ID if available
-        if (event.id) {
-            if (seenById.has(event.id)) {
-                // Skip duplicate by ID
-                continue;
-            }
-            seenById.set(event.id, event);
-        }
-        
-        // Normalize title for comparison
-        const normalizedTitle = (event.title || 'No title')
-            .toLowerCase()
-            .trim()
-            .replace(/\s+/g, ' ');
-        
-        const startTime = new Date(event.start).getTime();
-        if (isNaN(startTime)) continue;
-        
-        // Create a key based on normalized title and approximate start time
-        // Round start time to nearest 5 minutes for comparison
-        const roundedStartTime = Math.round(startTime / TIME_TOLERANCE_MS) * TIME_TOLERANCE_MS;
-        const key = `${normalizedTitle}|${roundedStartTime}`;
-        
-        if (seenByKey.has(key)) {
-            // Event is a duplicate - merge calendar sources
-            const existing = seenByKey.get(key);
-            
-            // Initialize calendarSources if not present
-            if (!existing.calendarSources) {
-                existing.calendarSources = [{
-                    type: existing.calendarType,
-                    id: existing.calendarId,
-                    name: existing.calendarName
-                }];
-            }
-            
-            // Add this calendar as a source if not already present
-            const sourceExists = existing.calendarSources.some(
-                s => s.type === event.calendarType && s.id === event.calendarId
-            );
-            
-            if (!sourceExists) {
-                existing.calendarSources.push({
-                    type: event.calendarType,
-                    id: event.calendarId,
-                    name: event.calendarName
-                });
-                
-                // Update calendarType to 'multiple' if from multiple sources
-                if (existing.calendarSources.length > 1) {
-                    existing.calendarType = 'multiple';
-                }
-            }
-            
-            // Use longer description if available
-            if (event.description && event.description.length > (existing.description?.length || 0)) {
-                existing.description = event.description;
-            }
-        } else {
-            // New event - add it
-            const newEvent = {
-                ...event,
-                calendarSources: [{
-                    type: event.calendarType,
-                    id: event.calendarId,
-                    name: event.calendarName
-                }]
-            };
-            seenByKey.set(key, newEvent);
-        }
+// Generate events from onboarding data (AI conversation)
+function generateEventsFromOnboarding(startDate, endDate) {
+    const onboardingData = localStorage.getItem('zeitline_onboarding_data');
+    if (!onboardingData) {
+        console.log('ℹ️ No onboarding data found in localStorage');
+        return [];
     }
     
-    return Array.from(seenByKey.values());
+    try {
+        const parsed = JSON.parse(onboardingData);
+        const collectedData = parsed.collectedData || parsed;
+        
+        // Check for routine data
+        const routines = collectedData.routines || {};
+        const weekday = routines.weekday || {};
+        const weekend = routines.weekend || {};
+        
+        // Also check for flat data structure
+        const wakeTime = weekday.wakeTime || collectedData.wakeTime || collectedData.wakeTimeWeekday;
+        const workStart = weekday.workStart || collectedData.workStartTime;
+        const workEnd = weekday.workEnd || collectedData.workEndTime;
+        const breakfastTime = weekday.meals?.breakfast || collectedData.breakfastTime;
+        const lunchTime = weekday.meals?.lunch || collectedData.lunchTime;
+        const dinnerTime = weekday.meals?.dinner || collectedData.dinnerTime;
+        const bedtime = weekday.bedtime || collectedData.bedtime || collectedData.bedtimeWeekday;
+        const exerciseTime = weekday.exercise?.time || collectedData.exerciseTime;
+        const exerciseDays = weekday.exercise?.days || collectedData.exerciseDays || ['monday', 'wednesday', 'friday'];
+        
+        if (!wakeTime && !workStart && !breakfastTime) {
+            console.log('ℹ️ No routine times found in onboarding data');
+            return [];
+        }
+        
+        console.log('📅 Generating events from onboarding data...');
+        console.log('  Wake time:', wakeTime);
+        console.log('  Work:', workStart, '-', workEnd);
+        console.log('  Meals:', breakfastTime, lunchTime, dinnerTime);
+        console.log('  Exercise:', exerciseTime, 'on', exerciseDays);
+        
+        const events = [];
+        const dayMap = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+        
+        // Helper to parse time string
+        function parseTime(timeStr) {
+            if (!timeStr) return null;
+            const formats = [
+                /(\d{1,2}):(\d{2})\s*(AM|PM)/i,
+                /(\d{1,2}):(\d{2})/,
+                /(\d{1,2})\s*(AM|PM)/i,
+            ];
+            for (const format of formats) {
+                const match = timeStr.match(format);
+                if (match) {
+                    let hours = parseInt(match[1]);
+                    const minutes = match[2] && !isNaN(parseInt(match[2])) ? parseInt(match[2]) : 0;
+                    const ampm = match[3]?.toUpperCase();
+                    if (ampm === 'PM' && hours !== 12) hours += 12;
+                    if (ampm === 'AM' && hours === 12) hours = 0;
+                    return { hours, minutes };
+                }
+            }
+            return null;
+        }
+        
+        // Generate recurring events for the date range
+        function createRecurringEvents(title, timeStr, durationMinutes, daysOfWeek, source = 'onboarding') {
+            const parsedTime = parseTime(timeStr);
+            if (!parsedTime) return;
+            
+            const currentDate = new Date(startDate);
+            while (currentDate <= endDate) {
+                const dayOfWeek = currentDate.getDay();
+                if (daysOfWeek.includes(dayOfWeek)) {
+                    const eventStart = new Date(currentDate);
+                    eventStart.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
+                    const eventEnd = new Date(eventStart);
+                    eventEnd.setMinutes(eventEnd.getMinutes() + durationMinutes);
+                    
+                    events.push({
+                        id: `onboarding-${title.toLowerCase().replace(/\s+/g, '-')}-${eventStart.toISOString()}`,
+                        title: title,
+                        start: eventStart.toISOString(),
+                        end: eventEnd.toISOString(),
+                        calendarType: 'zeitline',
+                        calendarName: 'My Routine',
+                        source: source,
+                        isFromOnboarding: true
+                    });
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        }
+        
+        const weekdays = [1, 2, 3, 4, 5]; // Mon-Fri
+        const weekends = [0, 6]; // Sun, Sat
+        
+        // Generate weekday events
+        if (wakeTime) createRecurringEvents('🌅 Wake Up', wakeTime, 30, weekdays);
+        if (breakfastTime) createRecurringEvents('🍳 Breakfast', breakfastTime, 45, weekdays);
+        if (workStart && workEnd) {
+            const workStartParsed = parseTime(workStart);
+            const workEndParsed = parseTime(workEnd);
+            if (workStartParsed && workEndParsed) {
+                const durationMinutes = (workEndParsed.hours * 60 + workEndParsed.minutes) - (workStartParsed.hours * 60 + workStartParsed.minutes);
+                if (durationMinutes > 0) {
+                    createRecurringEvents('💼 Work', workStart, durationMinutes, weekdays);
+                }
+            }
+        }
+        if (lunchTime) createRecurringEvents('🥗 Lunch', lunchTime, 60, weekdays);
+        if (dinnerTime) createRecurringEvents('🍽️ Dinner', dinnerTime, 60, weekdays);
+        if (exerciseTime && exerciseDays.length > 0) {
+            const exerciseDayNumbers = exerciseDays.map(d => dayMap[d.toLowerCase()]).filter(d => d !== undefined);
+            createRecurringEvents('🏋️ Exercise', exerciseTime, 60, exerciseDayNumbers);
+        }
+        if (bedtime) createRecurringEvents('😴 Bedtime', bedtime, 30, weekdays);
+        
+        // Generate weekend events (if different from weekday)
+        const weekendWake = weekend.wakeTime || collectedData.wakeTimeWeekend;
+        const weekendBedtime = weekend.bedtime || collectedData.bedtimeWeekend;
+        if (weekendWake) createRecurringEvents('🌅 Weekend Wake Up', weekendWake, 30, weekends);
+        if (weekendBedtime) createRecurringEvents('😴 Weekend Bedtime', weekendBedtime, 30, weekends);
+        
+        console.log(`✅ Generated ${events.length} events from onboarding data`);
+        return events;
+    } catch (error) {
+        console.warn('⚠️ Error parsing onboarding data:', error);
+        return [];
+    }
 }
 
 async function loadCalendarEvents() {
@@ -1055,9 +1263,17 @@ async function loadCalendarEvents() {
             }
         }
         
-        // Deduplicate events on the frontend (in case backend didn't catch all duplicates)
-        events = deduplicateEventsClient(events);
-        console.log(`After deduplication: ${events.length} unique events`);
+        // Always try to add events from onboarding data (AI conversation)
+        // These are generated from the user's routines collected during onboarding
+        try {
+            const onboardingEvents = generateEventsFromOnboarding(startDate, endDate);
+            if (onboardingEvents && onboardingEvents.length > 0) {
+                console.log(`📅 Adding ${onboardingEvents.length} events from onboarding data`);
+                events = [...events, ...onboardingEvents];
+            }
+        } catch (onboardingError) {
+            console.warn('⚠️ Error loading onboarding events:', onboardingError);
+        }
         
         calendarEvents = {};
         
@@ -1081,16 +1297,39 @@ async function loadCalendarEvents() {
                     calendarEvents[dateStr] = [];
                 }
                 calendarEvents[dateStr].push(event);
+                
+                // Log Zeitline events for debugging
+                if (event.calendarType === 'zeitline' && event.source === 'onboarding') {
+                    console.log('📅 Zeitline onboarding event loaded:', {
+                        title: event.title,
+                        date: dateStr,
+                        start: event.start,
+                        recurring: event.recurring ? 'Yes' : 'No'
+                    });
+                }
             } catch (error) {
                 console.error('Error processing event:', error, event);
             }
         });
         
         console.log(`Organized events into ${Object.keys(calendarEvents).length} days`);
+        
+        // Count Zeitline onboarding events
+        const zeitlineEvents = Object.values(calendarEvents).flat().filter(e => 
+            e.calendarType === 'zeitline' && e.source === 'onboarding'
+        );
+        if (zeitlineEvents.length > 0) {
+            console.log(`✅ Found ${zeitlineEvents.length} Zeitline onboarding events:`, 
+                zeitlineEvents.map(e => e.title));
+        } else {
+            console.log('ℹ️ No Zeitline onboarding events found. Check if onboarding data exists and calendar was populated.');
+        }
+        
         if (Object.keys(calendarEvents).length > 0) {
             console.log('Calendar events by date:', Object.keys(calendarEvents).slice(0, 10).map(date => ({
                 date,
                 count: calendarEvents[date].length,
+                zeitlineCount: calendarEvents[date].filter(e => e.calendarType === 'zeitline' && e.source === 'onboarding').length,
                 sample: calendarEvents[date][0]?.title
             })));
         } else {
@@ -2453,594 +2692,62 @@ async function connectGoogleCalendar() {
 }
 
 function showAppleCalendarModal() {
-    // Use the HTML modal instead of dynamically creating one
-    const modal = document.getElementById('appleCalendarModal');
-    if (modal) {
-        modal.classList.add('active');
-        // Clear any previous input values
-        const appleIdInput = document.getElementById('appleId');
-        const appPasswordInput = document.getElementById('appPassword');
-        if (appleIdInput) appleIdInput.value = '';
-        if (appPasswordInput) appPasswordInput.value = '';
-    } else {
-        console.error('Apple Calendar modal not found');
-        showError('Apple Calendar connection modal not found. Please refresh the page.');
-    }
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(5, 5, 8, 0.9); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 1000;';
+    modal.innerHTML = `
+        <div style="background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 24px; padding: 2rem; max-width: 500px; width: 90%; position: relative;">
+            <button onclick="this.closest('.modal-overlay').remove()" style="position: absolute; top: 1rem; right: 1rem; width: 36px; height: 36px; background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary); border-radius: 50%; cursor: pointer; font-size: 1.25rem;">×</button>
+            <h2 style="font-family: \'Instrument Serif\', Georgia, serif; font-size: 1.5rem; margin-bottom: 1rem;">Connect Apple Calendar</h2>
+            <p style="color: var(--text-secondary); margin-bottom: 1.5rem; font-size: 0.9rem;">Connect your Apple Calendar using CalDAV. You'll need an app-specific password from appleid.apple.com</p>
+            <form onsubmit="connectAppleCalendar(event, this.closest('.modal-overlay'))">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem;">Apple ID Email</label>
+                    <input type="email" name="email" class="form-input" placeholder="your@email.com" required style="width: 100%; padding: 0.75rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-primary);">
+                </div>
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem;">App-Specific Password</label>
+                    <input type="password" name="password" class="form-input" placeholder="xxxx-xxxx-xxxx-xxxx" required style="width: 100%; padding: 0.75rem; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 12px; color: var(--text-primary);">
+                    <p style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">Generate at <a href="https://appleid.apple.com" target="_blank" style="color: var(--accent-primary);">appleid.apple.com</a></p>
+                </div>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="submit" class="btn btn-primary" style="flex: 1;">Connect</button>
+                    <button type="button" onclick="this.closest('.modal-overlay').remove()" class="btn btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
 }
 
-function closeAppleModal(event) {
-    // If event is provided, check if we clicked on the backdrop
-    if (event && event.target !== event.currentTarget) {
-        return;
-    }
-    const modal = document.getElementById('appleCalendarModal');
-    if (modal) {
-        modal.classList.remove('active');
-    }
-}
-
-// Make closeAppleModal globally accessible
-window.closeAppleModal = closeAppleModal;
-
-async function connectAppleCalendar(event) {
+async function connectAppleCalendar(event, modal) {
     event.preventDefault();
-    
-    console.log('🍎 connectAppleCalendar called');
-    
-    const appleIdInput = document.getElementById('appleId');
-    const appPasswordInput = document.getElementById('appPassword');
-    const btn = document.getElementById('appleConnectBtn');
-    
-    console.log('🍎 Input elements found:', {
-        appleIdInput: !!appleIdInput,
-        appPasswordInput: !!appPasswordInput,
-        btnFound: !!btn
-    });
-    
-    const appleId = appleIdInput ? appleIdInput.value.trim() : '';
-    const appPassword = appPasswordInput ? appPasswordInput.value.trim() : '';
-    
-    console.log('🍎 Values:', {
-        appleIdLength: appleId.length,
-        appPasswordLength: appPassword.length,
-        appleIdEmpty: !appleId,
-        appPasswordEmpty: !appPassword
-    });
-    
-    if (!appleId || !appPassword) {
-        console.error('🍎 Validation failed: missing appleId or appPassword');
-        showError('Please enter both Apple ID and app-specific password');
-        return;
-    }
-    
-    console.log('🍎 Validation passed, proceeding with API call...');
-    
-    // Disable button and show loading state
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Connecting...';
+    const form = event.target;
+    const email = form.querySelector('input[name="email"]').value;
+    const password = form.querySelector('input[name="password"]').value;
     
     try {
-        showLoading('Connecting Apple Calendar via CalDAV...');
+        showLoading('Connecting Apple Calendar...');
         
-        console.log('🍎 Making API call to /calendars/apple/connect');
-        console.log('🍎 Request body:', JSON.stringify({ appleId: appleId.substring(0, 3) + '***', appPasswordLength: appPassword.length }));
-        
-        const response = await apiCall('/calendars/apple/connect', {
+        await apiCall('/calendars/apple/connect', {
             method: 'POST',
-            body: JSON.stringify({ appleId, appPassword })
+            body: JSON.stringify({ email, password })
         });
         
-        console.log('🍎 API response:', response);
-        
+        modal.remove();
         hideLoading();
-        closeAppleModal();
-        
-        if (response.success) {
-            const calendarNames = response.data?.calendars?.join(', ') || 'your calendars';
-            showSuccess(`Apple Calendar connected! Found: ${calendarNames}`);
-            await loadConnectedCalendars();
-            await loadCalendarEvents();
-            renderCalendarConnections();
-        } else {
-            showError(response.error || 'Failed to connect Apple Calendar');
-        }
+        showSuccess('Apple Calendar connected successfully!');
+        await loadConnectedCalendars();
+        await loadCalendarEvents();
     } catch (error) {
         hideLoading();
         console.error('Error connecting Apple Calendar:', error);
-        
-        // Show specific error messages
-        if (error.message?.includes('401') || error.message?.includes('Unauthorized')) {
-            showError('Invalid credentials. Make sure you are using an app-specific password from appleid.apple.com, not your regular Apple ID password.');
-        } else {
-            showError(error.message || 'Failed to connect Apple Calendar. Please check your credentials.');
-        }
-    } finally {
-        btn.disabled = false;
-        btn.textContent = originalText;
+        showError(error.message || 'Failed to connect Apple Calendar');
     }
 }
-
-// Make connectAppleCalendar globally accessible
-window.connectAppleCalendar = connectAppleCalendar;
-
-// ============================================
-// QUICK CREATE EVENT MODAL
-// ============================================
-
-// Open quick create modal
-function openQuickCreateModal(dateStr, minutesFromMidnight) {
-    const modal = document.getElementById('quickCreateModal');
-    if (!modal) {
-        console.error('Quick create modal not found');
-        return;
-    }
-    
-    // Set default date
-    const dateInput = document.getElementById('quickCreateDate');
-    if (dateInput) {
-        dateInput.value = dateStr || new Date().toISOString().split('T')[0];
-    }
-    
-    // Set default time
-    const timeInput = document.getElementById('quickCreateTime');
-    if (timeInput && minutesFromMidnight !== undefined) {
-        const hours = Math.floor(minutesFromMidnight / 60);
-        const minutes = minutesFromMidnight % 60;
-        timeInput.value = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-    }
-    
-    // Clear other fields
-    const titleInput = document.getElementById('quickCreateTitle');
-    if (titleInput) titleInput.value = '';
-    
-    const locationInput = document.getElementById('quickCreateLocation');
-    if (locationInput) locationInput.value = '';
-    
-    const descriptionInput = document.getElementById('quickCreateDescription');
-    if (descriptionInput) descriptionInput.value = '';
-    
-    const recurrenceSelect = document.getElementById('quickCreateRecurrence');
-    if (recurrenceSelect) recurrenceSelect.value = '';
-    
-    // Check if there's a pending AI pattern
-    if (window.pendingRecurringPattern) {
-        const pattern = window.pendingRecurringPattern;
-        if (pattern.frequency && recurrenceSelect) {
-            recurrenceSelect.value = pattern.frequency;
-        }
-    }
-    
-    modal.classList.add('active');
-    
-    // Focus on title input
-    setTimeout(() => {
-        if (titleInput) titleInput.focus();
-    }, 100);
-}
-
-// Close quick create modal
-function closeQuickCreateModal(event) {
-    if (event && event.target !== event.currentTarget) return;
-    
-    const modal = document.getElementById('quickCreateModal');
-    if (modal) {
-        modal.classList.remove('active');
-    }
-    
-    // Clear pending pattern
-    window.pendingRecurringPattern = null;
-}
-
-// Save quick create event
-async function saveQuickCreateEvent(event) {
-    event.preventDefault();
-    
-    const title = document.getElementById('quickCreateTitle')?.value?.trim();
-    const date = document.getElementById('quickCreateDate')?.value;
-    const time = document.getElementById('quickCreateTime')?.value || '09:00';
-    const duration = parseInt(document.getElementById('quickCreateDuration')?.value || '60');
-    const location = document.getElementById('quickCreateLocation')?.value?.trim();
-    const description = document.getElementById('quickCreateDescription')?.value?.trim();
-    const recurrenceValue = document.getElementById('quickCreateRecurrence')?.value;
-    
-    if (!title || !date) {
-        showError('Please enter a title and date');
-        return;
-    }
-    
-    const btn = document.getElementById('quickCreateSaveBtn');
-    const originalText = btn?.textContent || 'Create Event';
-    if (btn) {
-        btn.disabled = true;
-        btn.textContent = 'Creating...';
-    }
-    
-    try {
-        // Build start and end datetime
-        const startDateTime = new Date(`${date}T${time}:00`);
-        const endDateTime = new Date(startDateTime.getTime() + duration * 60 * 1000);
-        
-        // Build recurrence pattern
-        let recurrence = null;
-        if (recurrenceValue) {
-            recurrence = { frequency: recurrenceValue, interval: 1 };
-            
-            if (recurrenceValue === 'weekdays') {
-                recurrence.frequency = 'weekly';
-                recurrence.daysOfWeek = [1, 2, 3, 4, 5]; // Mon-Fri
-            }
-            
-            // Use pending AI pattern if available
-            if (window.pendingRecurringPattern) {
-                recurrence = { ...recurrence, ...window.pendingRecurringPattern };
-            }
-        }
-        
-        // Create event via API
-        const response = await apiCall('/calendars/events', {
-            method: 'POST',
-            body: JSON.stringify({
-                title,
-                description,
-                start: startDateTime.toISOString(),
-                end: endDateTime.toISOString(),
-                location,
-                recurrence,
-                calendarType: 'zeitline'
-            })
-        });
-        
-        if (response.success) {
-            closeQuickCreateModal();
-            showSuccess(`Event "${title}" created!`);
-            
-            // Reload calendar events to show the new event
-            await loadCalendarEvents();
-            
-            // Re-render current view
-            if (currentView === 'month') {
-                renderCalendar();
-            } else if (currentView === 'week') {
-                renderWeekView();
-            } else if (currentView === 'day') {
-                renderDayView();
-            }
-        } else {
-            throw new Error(response.error || 'Failed to create event');
-        }
-    } catch (error) {
-        console.error('Error creating event:', error);
-        showError(error.message || 'Failed to create event');
-    } finally {
-        if (btn) {
-            btn.disabled = false;
-            btn.textContent = originalText;
-        }
-        window.pendingRecurringPattern = null;
-    }
-}
-
-// Open quick create modal with pre-filled event data from AI
-function openQuickCreateModalWithEvent(eventData, pattern) {
-    const modal = document.getElementById('quickCreateModal');
-    if (!modal) {
-        console.error('Quick create modal not found');
-        return;
-    }
-    
-    // Set title
-    const titleInput = document.getElementById('quickCreateTitle');
-    if (titleInput && eventData.title) {
-        titleInput.value = eventData.title;
-    }
-    
-    // Set date
-    const dateInput = document.getElementById('quickCreateDate');
-    if (dateInput && eventData.date) {
-        dateInput.value = eventData.date;
-    }
-    
-    // Set time
-    const timeInput = document.getElementById('quickCreateTime');
-    if (timeInput && eventData.time) {
-        timeInput.value = eventData.time;
-    }
-    
-    // Set duration
-    const durationSelect = document.getElementById('quickCreateDuration');
-    if (durationSelect && eventData.duration) {
-        // Find closest option
-        const duration = parseInt(eventData.duration);
-        const options = [30, 60, 90, 120, 180, 240, 480];
-        const closest = options.reduce((prev, curr) => 
-            Math.abs(curr - duration) < Math.abs(prev - duration) ? curr : prev
-        );
-        durationSelect.value = closest.toString();
-    }
-    
-    // Set location
-    const locationInput = document.getElementById('quickCreateLocation');
-    if (locationInput && eventData.location) {
-        locationInput.value = eventData.location;
-    }
-    
-    // Set description
-    const descriptionInput = document.getElementById('quickCreateDescription');
-    if (descriptionInput && eventData.description) {
-        descriptionInput.value = eventData.description;
-    }
-    
-    // Set recurrence
-    const recurrenceSelect = document.getElementById('quickCreateRecurrence');
-    if (recurrenceSelect && pattern) {
-        if (pattern.frequency === 'weekly' && pattern.daysOfWeek && 
-            JSON.stringify(pattern.daysOfWeek.sort()) === JSON.stringify([1,2,3,4,5])) {
-            recurrenceSelect.value = 'weekdays';
-        } else if (pattern.frequency) {
-            recurrenceSelect.value = pattern.frequency;
-        }
-        window.pendingRecurringPattern = pattern;
-    } else {
-        if (recurrenceSelect) recurrenceSelect.value = '';
-    }
-    
-    modal.classList.add('active');
-    
-    // Add a message in the AI chat
-    addAIMessage('assistant', `I've pre-filled the event details. Please review and click "Create Event" to add it to your calendar.`);
-}
-
-// Make functions globally accessible
-window.openQuickCreateModal = openQuickCreateModal;
-window.closeQuickCreateModal = closeQuickCreateModal;
-window.saveQuickCreateEvent = saveQuickCreateEvent;
-window.openQuickCreateModalWithEvent = openQuickCreateModalWithEvent;
-
-// Sync calendars with connected services
-async function syncCalendars() {
-    const syncBtn = document.getElementById('syncBtn');
-    const syncIcon = document.getElementById('syncIcon');
-    const syncBtnText = document.getElementById('syncBtnText');
-    const lastSyncInfo = document.getElementById('lastSyncInfo');
-    
-    if (!syncBtn) return;
-    
-    // Show loading state
-    syncBtn.disabled = true;
-    syncIcon.style.animation = 'spin 1s linear infinite';
-    syncBtnText.textContent = 'Syncing...';
-    
-    // Add spin animation if not exists
-    if (!document.getElementById('syncSpinStyle')) {
-        const style = document.createElement('style');
-        style.id = 'syncSpinStyle';
-        style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
-        document.head.appendChild(style);
-    }
-    
-    try {
-        const response = await apiCall('/calendars/sync', { method: 'POST' });
-        
-        if (response.success) {
-            const { syncResults, lastSync } = response.data;
-            
-            // Show success message
-            let message = 'Sync complete! ';
-            const parts = [];
-            
-            if (syncResults.google?.success) {
-                parts.push(`Google: ${syncResults.google.eventCount || 0} events`);
-            }
-            if (syncResults.apple?.success) {
-                parts.push(`Apple: ${syncResults.apple.eventCount || 0} events`);
-            }
-            if (syncResults.outlook?.success) {
-                parts.push(`Outlook: ${syncResults.outlook.eventCount || 0} events`);
-            }
-            
-            if (parts.length > 0) {
-                message += parts.join(', ');
-            } else {
-                message = 'No calendars connected. Connect calendars in Settings.';
-            }
-            
-            showSuccess(message);
-            
-            // Update last sync time display
-            if (lastSyncInfo) {
-                const syncTime = new Date(lastSync);
-                lastSyncInfo.innerHTML = `Last synced: ${syncTime.toLocaleTimeString()}`;
-            }
-            
-            // Save last sync time to localStorage
-            localStorage.setItem('lastCalendarSync', lastSync);
-            
-            // Reload calendar events
-            await renderCalendar();
-        } else {
-            throw new Error(response.error || 'Sync failed');
-        }
-    } catch (error) {
-        console.error('Sync error:', error);
-        showError('Sync failed: ' + (error.message || 'Unknown error'));
-    } finally {
-        // Reset button state
-        syncBtn.disabled = false;
-        syncIcon.style.animation = '';
-        syncBtnText.textContent = 'Sync';
-    }
-}
-
-// Load and display last sync time on page load
-function loadLastSyncInfo() {
-    const lastSyncInfo = document.getElementById('lastSyncInfo');
-    const lastSync = localStorage.getItem('lastCalendarSync');
-    
-    if (lastSyncInfo && lastSync) {
-        const syncTime = new Date(lastSync);
-        const now = new Date();
-        const diffMs = now - syncTime;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMins / 60);
-        const diffDays = Math.floor(diffHours / 24);
-        
-        let timeAgo;
-        if (diffMins < 1) {
-            timeAgo = 'just now';
-        } else if (diffMins < 60) {
-            timeAgo = `${diffMins} min ago`;
-        } else if (diffHours < 24) {
-            timeAgo = `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-        } else {
-            timeAgo = `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-        }
-        
-        lastSyncInfo.innerHTML = `Last synced: ${timeAgo}`;
-    }
-}
-
-// Make sync function globally accessible
-window.syncCalendars = syncCalendars;
-
-// Set up real-time Firestore listener for calendar events
-let isInitialRealtimeLoad = true;
-
-function setupRealtimeCalendarSync() {
-    // Get current user
-    const user = firebase.auth().currentUser;
-    if (!user) {
-        console.log('No user logged in, skipping real-time sync setup');
-        return;
-    }
-    
-    // Clean up existing listener
-    if (calendarEventsUnsubscribe) {
-        calendarEventsUnsubscribe();
-        calendarEventsUnsubscribe = null;
-    }
-    
-    console.log('Setting up real-time calendar sync for user:', user.uid);
-    isInitialRealtimeLoad = true;
-    
-    const db = firebase.firestore();
-    const eventsRef = db.collection('users').doc(user.uid).collection('calendar_events');
-    
-    // Listen for changes to calendar events
-    calendarEventsUnsubscribe = eventsRef.onSnapshot(
-        (snapshot) => {
-            // Skip the initial load - we already loaded events via API
-            if (isInitialRealtimeLoad) {
-                console.log(`Real-time sync: Initial snapshot with ${snapshot.docs.length} events (skipping to avoid duplicates)`);
-                isInitialRealtimeLoad = false;
-                return;
-            }
-            
-            const changes = snapshot.docChanges();
-            if (changes.length === 0) return;
-            
-            console.log(`Real-time update: ${changes.length} event changes`);
-            
-            let hasChanges = false;
-            
-            changes.forEach((change) => {
-                const eventData = change.doc.data();
-                const eventId = change.doc.id;
-                
-                if (change.type === 'added' || change.type === 'modified') {
-                    // Get the date key for this event
-                    const eventDate = new Date(eventData.start);
-                    if (isNaN(eventDate.getTime())) return;
-                    
-                    const year = eventDate.getFullYear();
-                    const month = eventDate.getMonth() + 1;
-                    const day = eventDate.getDate();
-                    const dateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    
-                    // Initialize array if needed
-                    if (!calendarEvents[dateKey]) {
-                        calendarEvents[dateKey] = [];
-                    }
-                    
-                    // Remove existing event with same ID from ALL dates (in case date changed)
-                    Object.keys(calendarEvents).forEach(dk => {
-                        calendarEvents[dk] = calendarEvents[dk].filter(e => e.id !== eventId);
-                    });
-                    
-                    // Add the updated event
-                    calendarEvents[dateKey].push({
-                        id: eventId,
-                        title: eventData.title || 'No title',
-                        description: eventData.description || '',
-                        start: eventData.start,
-                        end: eventData.end,
-                        location: eventData.location || '',
-                        calendarType: eventData.calendarType || 'zeitline',
-                        calendarName: eventData.calendarName || 'Zeitline',
-                        color: calendarColors[eventData.calendarType] || calendarColors.zeitline
-                    });
-                    
-                    hasChanges = true;
-                    console.log(`Event ${change.type}: ${eventData.title}`);
-                }
-                
-                if (change.type === 'removed') {
-                    // Find and remove the event from calendarEvents
-                    Object.keys(calendarEvents).forEach(dateKey => {
-                        calendarEvents[dateKey] = calendarEvents[dateKey].filter(e => e.id !== eventId);
-                    });
-                    hasChanges = true;
-                    console.log(`Event removed: ${eventId}`);
-                }
-            });
-            
-            // Re-render calendar if there were changes
-            if (hasChanges) {
-                console.log('Re-rendering calendar due to real-time changes');
-                if (currentView === 'month') {
-                    renderCalendar();
-                } else if (currentView === 'week') {
-                    renderWeekView();
-                } else if (currentView === 'day') {
-                    renderDayView();
-                }
-                
-                // Show notification for external changes
-                if (!snapshot.metadata.fromCache && !snapshot.metadata.hasPendingWrites) {
-                    showSyncNotification();
-                }
-            }
-        },
-        (error) => {
-            console.error('Real-time calendar sync error:', error);
-        }
-    );
-}
-
-// Show a subtle notification when calendar updates from another device
-function showSyncNotification() {
-    const lastSyncInfo = document.getElementById('lastSyncInfo');
-    if (lastSyncInfo) {
-        const originalText = lastSyncInfo.innerHTML;
-        lastSyncInfo.innerHTML = '<span style="color: var(--accent-secondary);">✓ Updated from sync</span>';
-        setTimeout(() => {
-            loadLastSyncInfo();
-        }, 2000);
-    }
-}
-
-// Clean up listener when user signs out
-function cleanupRealtimeSync() {
-    if (calendarEventsUnsubscribe) {
-        calendarEventsUnsubscribe();
-        calendarEventsUnsubscribe = null;
-        console.log('Real-time calendar sync cleaned up');
-    }
-}
-
-// Make functions globally accessible
-window.setupRealtimeCalendarSync = setupRealtimeCalendarSync;
-window.cleanupRealtimeSync = cleanupRealtimeSync;
 
 // UI helpers
 function showError(message) {
@@ -3186,21 +2893,8 @@ window.sendAIMessage = async function(messageText) {
             addAIMessage('assistant', response.message);
             aiConversationHistory.push({ role: 'assistant', content: response.message });
             
-            // If AI detected an event to create, open the quick create modal
-            if (response.event) {
-                console.log('AI detected event to create:', response.event);
-                
-                // Store pattern if present
-                if (response.pattern) {
-                    window.pendingRecurringPattern = response.pattern;
-                }
-                
-                // Open quick create modal with pre-filled data
-                setTimeout(() => {
-                    openQuickCreateModalWithEvent(response.event, response.pattern);
-                }, 500);
-            } else if (response.pattern) {
-                // Just a recurring pattern suggestion
+            // If AI detected a recurring pattern, offer to create event
+            if (response.pattern) {
                 currentAISuggestion = response.pattern;
                 addAIPatternSuggestion(response.pattern, message);
             }

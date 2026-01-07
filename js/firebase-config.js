@@ -15,13 +15,19 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// Set persistence to LOCAL - keeps user logged in even after browser closes
-auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+// Set persistence to SESSION - keeps user logged in during browser session only
+// This allows users to switch accounts more easily
+auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
   .then(() => {
-    console.log("Auth persistence set to LOCAL");
+    console.log("Auth persistence set to SESSION");
   })
   .catch((error) => {
     console.error("Error setting persistence:", error);
+    // Fallback to LOCAL if SESSION is not available
+    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
+      .then(() => {
+        console.log("Auth persistence set to LOCAL (fallback)");
+      });
   });
 
 // API base URL - change for production
@@ -90,6 +96,10 @@ async function signInWithEmail(email, password) {
 
 async function signInWithGoogle() {
   const provider = new firebase.auth.GoogleAuthProvider();
+  // Force account selection - this ensures users can choose a different account
+  provider.setCustomParameters({
+    prompt: 'select_account'
+  });
   const userCredential = await auth.signInWithPopup(provider);
   return userCredential.user;
 }
@@ -103,9 +113,48 @@ async function signInWithApple() {
 }
 
 async function signOut() {
-  await auth.signOut();
-  localStorage.removeItem("authToken");
-  window.location.href = "/";
+  try {
+    // Set flag to allow staying on login page after logout
+    sessionStorage.setItem('stayOnLoginPage', 'true');
+    
+    // Check if using test account before clearing
+    const authToken = localStorage.getItem("authToken");
+    const isTestAccount = authToken === "test-token-12345";
+    
+    // Sign out from Firebase
+    await auth.signOut();
+    
+    // Clear auth token
+    localStorage.removeItem("authToken");
+    
+    // Clear test account data if it exists
+    if (isTestAccount) {
+      localStorage.removeItem("zeitline_profile");
+      localStorage.removeItem("zeitline_onboarding_complete");
+    }
+    
+    // Clear any cached Google account selection
+    // Keep the stayOnLoginPage flag for a moment
+    const stayFlag = sessionStorage.getItem('stayOnLoginPage');
+    sessionStorage.clear();
+    if (stayFlag) {
+      sessionStorage.setItem('stayOnLoginPage', 'true');
+    }
+    
+    // Small delay to ensure auth state is cleared before redirect
+    setTimeout(() => {
+      // Redirect to login page with force parameter to prevent auto-login
+      window.location.href = "/login.html?switch=true";
+    }, 100);
+  } catch (error) {
+    console.error("Error signing out:", error);
+    // Still redirect even if there's an error
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("zeitline_profile");
+    localStorage.removeItem("zeitline_onboarding_complete");
+    sessionStorage.setItem('stayOnLoginPage', 'true');
+    window.location.href = "/login.html?switch=true";
+  }
 }
 
 async function resetPassword(email) {

@@ -47,30 +47,63 @@ document.addEventListener("DOMContentLoaded", () => {
   const isLoginPage = window.location.pathname.includes("login");
   const isSignupPage = window.location.pathname.includes("signup");
   
+  // Track if user explicitly wants to stay on login page (e.g., to switch accounts)
+  let allowLoginPage = false;
+  
+  // Check URL parameter for explicit login intent
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('force') === 'true' || urlParams.get('switch') === 'true') {
+    allowLoginPage = true;
+  }
+  
   // Check if user is already signed in
   window.addEventListener("authStateChanged", async (e) => {
     const user = e.detail;
-    if (user) {
-      // If on login page, user is existing - check onboarding status
+    
+    // Check if using test account (has test token but no real Firebase user)
+    const authToken = localStorage.getItem("authToken");
+    const isTestAccount = authToken === "test-token-12345" && !user;
+    
+    if (user || isTestAccount) {
+      // If on login page, only redirect if user didn't explicitly navigate here
+      // This allows users to switch accounts even if they're already logged in
       if (isLoginPage) {
-        if (hasCompletedOnboarding()) {
-          window.location.href = "/dashboard.html";
-        } else {
-          // Existing user but hasn't completed onboarding
-          window.location.href = "/onboarding-chat.html?mode=continue";
+        // Don't auto-redirect if user explicitly wants to stay on login page
+        if (allowLoginPage || sessionStorage.getItem('stayOnLoginPage') === 'true') {
+          console.log("User is signed in but staying on login page to allow account switching");
+          sessionStorage.removeItem('stayOnLoginPage');
+          return;
         }
+        
+        // Don't auto-redirect if URL has switch parameter
+        if (window.location.search.includes('switch=true')) {
+          console.log("Staying on login page due to switch parameter");
+          return;
+        }
+        
+        // Small delay to prevent immediate redirect if user just logged out
+        setTimeout(() => {
+          if (hasCompletedOnboarding()) {
+            window.location.href = "/dashboard.html";
+          } else {
+            // Existing user but hasn't completed onboarding
+            window.location.href = "/onboarding-chat.html?mode=continue";
+          }
+        }, 100);
         return;
       }
       
       // If on signup page, check if they've completed onboarding
       if (isSignupPage) {
-        if (hasCompletedOnboarding()) {
-          window.location.href = "/dashboard.html";
-          return;
-        }
-        
-        // New signup - go to chat onboarding
-        window.location.href = "/onboarding-chat.html?mode=new";
+        setTimeout(() => {
+          if (hasCompletedOnboarding()) {
+            window.location.href = "/dashboard.html";
+            return;
+          }
+          
+          // New signup - go to chat onboarding
+          window.location.href = "/onboarding-chat.html?mode=new";
+        }, 100);
       }
     }
   });

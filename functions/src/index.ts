@@ -142,13 +142,23 @@ app.get("/health", (req: Request, res: Response) => {
   });
 });
 
-// Mount routes
+// Mount routes - both with and without /api prefix
+// Direct access (functions emulator): /users, /calendars, etc.
+// Hosting rewrite access: /api/users, /api/calendars, etc.
 app.use("/users", usersRouter);
 app.use("/stripe", stripeRouter);
 app.use("/calendars", calendarsRouter);
 app.use("/ai-assistant", aiAssistantRouter);
 app.use("/nutrition", nutritionRouter);
 app.use("/onboarding", onboardingChatRouter);
+
+// Also mount under /api for Firebase hosting rewrites
+app.use("/api/users", usersRouter);
+app.use("/api/stripe", stripeRouter);
+app.use("/api/calendars", calendarsRouter);
+app.use("/api/ai-assistant", aiAssistantRouter);
+app.use("/api/nutrition", nutritionRouter);
+app.use("/api/onboarding", onboardingChatRouter);
 
 // Error handling middleware - must be before 404 handler
 // Note: Express error handlers must have 4 parameters

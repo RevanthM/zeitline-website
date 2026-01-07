@@ -21,10 +21,98 @@ let calendarColors = {
 };
 
 // Initialize calendar
+// Check and populate calendar from onboarding data
+async function checkAndPopulateFromOnboarding() {
+    try {
+        // Check if onboarding data exists and calendar hasn't been populated yet
+        const onboardingData = localStorage.getItem('zeitline_onboarding_data');
+        const calendarPopulated = localStorage.getItem('zeitline_calendar_populated');
+        
+        if (!onboardingData || calendarPopulated === 'true') {
+            return; // No onboarding data or already populated
+        }
+        
+        const parsed = JSON.parse(onboardingData);
+        const collectedData = parsed.collectedData || {};
+        
+        // Check if we have routine data
+        if (!collectedData.routines && !collectedData.wakeTime && !collectedData.workStartTime) {
+            return; // No routine data to populate
+        }
+        
+        // Wait for auth
+        await waitForAuth();
+        
+        if (typeof firebase === 'undefined' || !firebase.auth) {
+            return;
+        }
+        
+        const user = firebase.auth().currentUser;
+        if (!user) {
+            return; // Not logged in
+        }
+        
+        // Transform data to include routines if not already present
+        const routines = collectedData.routines || {
+            weekday: {
+                wakeTime: collectedData.wakeTimeWeekday || collectedData.wakeTime,
+                bedtime: collectedData.bedtimeWeekday || collectedData.bedtime,
+                workStart: collectedData.workStartTime,
+                workEnd: collectedData.workEndTime,
+                meals: {
+                    breakfast: collectedData.breakfastTime,
+                    lunch: collectedData.lunchTime,
+                    dinner: collectedData.dinnerTime,
+                },
+                exercise: collectedData.exerciseTime ? {
+                    time: collectedData.exerciseTime,
+                    days: collectedData.exerciseDays || [],
+                    duration: collectedData.exerciseDuration || "60",
+                } : null,
+            },
+            weekend: {
+                wakeTime: collectedData.wakeTimeWeekend,
+                bedtime: collectedData.bedtimeWeekend,
+                meals: collectedData.mealTimesWeekend || {},
+            },
+        };
+        
+        const onboardingDataForAPI = {
+            ...collectedData,
+            routines,
+        };
+        
+        // Call API to populate calendar
+        try {
+            const response = await apiCall('/calendars/populate-from-onboarding', {
+                method: 'POST',
+                body: JSON.stringify({ onboardingData: onboardingDataForAPI })
+            });
+            
+            if (response.success) {
+                console.log(`✅ Populated calendar with ${response.data.eventsCreated} events from onboarding`);
+                localStorage.setItem('zeitline_calendar_populated', 'true');
+                
+                // Reload calendar events to show the new ones
+                setTimeout(() => {
+                    loadCalendarEvents();
+                }, 1000);
+            }
+        } catch (error) {
+            console.error('Error populating calendar from onboarding:', error);
+        }
+    } catch (error) {
+        console.error('Error checking onboarding data:', error);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     try {
         console.log('Calendar: Initializing...');
         loadUserInfo();
+        
+        // Check if we need to populate calendar from onboarding data
+        await checkAndPopulateFromOnboarding();
         
         // Load timezone preference from localStorage, or use system timezone
         const savedTimezone = localStorage.getItem('calendarTimezone');
@@ -125,6 +213,91 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.body.appendChild(errorDiv);
     }
 });
+
+// Check and populate calendar from onboarding data
+async function checkAndPopulateFromOnboarding() {
+    try {
+        // Check if onboarding data exists and calendar hasn't been populated yet
+        const onboardingData = localStorage.getItem('zeitline_onboarding_data');
+        const calendarPopulated = localStorage.getItem('zeitline_calendar_populated');
+        
+        if (!onboardingData || calendarPopulated === 'true') {
+            return; // No onboarding data or already populated
+        }
+        
+        const parsed = JSON.parse(onboardingData);
+        const collectedData = parsed.collectedData || {};
+        
+        // Check if we have routine data
+        if (!collectedData.routines && !collectedData.wakeTime && !collectedData.workStartTime) {
+            return; // No routine data to populate
+        }
+        
+        // Wait for auth
+        await waitForAuth();
+        
+        if (typeof firebase === 'undefined' || !firebase.auth) {
+            return;
+        }
+        
+        const user = firebase.auth().currentUser;
+        if (!user) {
+            return; // Not logged in
+        }
+        
+        // Transform data to include routines if not already present
+        const routines = collectedData.routines || {
+            weekday: {
+                wakeTime: collectedData.wakeTimeWeekday || collectedData.wakeTime,
+                bedtime: collectedData.bedtimeWeekday || collectedData.bedtime,
+                workStart: collectedData.workStartTime,
+                workEnd: collectedData.workEndTime,
+                meals: {
+                    breakfast: collectedData.breakfastTime,
+                    lunch: collectedData.lunchTime,
+                    dinner: collectedData.dinnerTime,
+                },
+                exercise: collectedData.exerciseTime ? {
+                    time: collectedData.exerciseTime,
+                    days: collectedData.exerciseDays || [],
+                    duration: collectedData.exerciseDuration || "60",
+                } : null,
+            },
+            weekend: {
+                wakeTime: collectedData.wakeTimeWeekend,
+                bedtime: collectedData.bedtimeWeekend,
+                meals: collectedData.mealTimesWeekend || {},
+            },
+        };
+        
+        const onboardingDataForAPI = {
+            ...collectedData,
+            routines,
+        };
+        
+        // Call API to populate calendar
+        try {
+            const response = await apiCall('/calendars/populate-from-onboarding', {
+                method: 'POST',
+                body: JSON.stringify({ onboardingData: onboardingDataForAPI })
+            });
+            
+            if (response.success) {
+                console.log(`✅ Populated calendar with ${response.data.eventsCreated} events from onboarding`);
+                localStorage.setItem('zeitline_calendar_populated', 'true');
+                
+                // Reload calendar events to show the new ones
+                setTimeout(() => {
+                    loadCalendarEvents();
+                }, 1000);
+            }
+        } catch (error) {
+            console.error('Error populating calendar from onboarding:', error);
+        }
+    } catch (error) {
+        console.error('Error checking onboarding data:', error);
+    }
+}
 
 // Wait for Firebase Auth to be initialized
 function waitForAuth() {
@@ -881,6 +1054,137 @@ async function loadEventsFromJSON() {
     }
 }
 
+// Generate events from onboarding data (AI conversation)
+function generateEventsFromOnboarding(startDate, endDate) {
+    const onboardingData = localStorage.getItem('zeitline_onboarding_data');
+    if (!onboardingData) {
+        console.log('ℹ️ No onboarding data found in localStorage');
+        return [];
+    }
+    
+    try {
+        const parsed = JSON.parse(onboardingData);
+        const collectedData = parsed.collectedData || parsed;
+        
+        // Check for routine data
+        const routines = collectedData.routines || {};
+        const weekday = routines.weekday || {};
+        const weekend = routines.weekend || {};
+        
+        // Also check for flat data structure
+        const wakeTime = weekday.wakeTime || collectedData.wakeTime || collectedData.wakeTimeWeekday;
+        const workStart = weekday.workStart || collectedData.workStartTime;
+        const workEnd = weekday.workEnd || collectedData.workEndTime;
+        const breakfastTime = weekday.meals?.breakfast || collectedData.breakfastTime;
+        const lunchTime = weekday.meals?.lunch || collectedData.lunchTime;
+        const dinnerTime = weekday.meals?.dinner || collectedData.dinnerTime;
+        const bedtime = weekday.bedtime || collectedData.bedtime || collectedData.bedtimeWeekday;
+        const exerciseTime = weekday.exercise?.time || collectedData.exerciseTime;
+        const exerciseDays = weekday.exercise?.days || collectedData.exerciseDays || ['monday', 'wednesday', 'friday'];
+        
+        if (!wakeTime && !workStart && !breakfastTime) {
+            console.log('ℹ️ No routine times found in onboarding data');
+            return [];
+        }
+        
+        console.log('📅 Generating events from onboarding data...');
+        console.log('  Wake time:', wakeTime);
+        console.log('  Work:', workStart, '-', workEnd);
+        console.log('  Meals:', breakfastTime, lunchTime, dinnerTime);
+        console.log('  Exercise:', exerciseTime, 'on', exerciseDays);
+        
+        const events = [];
+        const dayMap = { 'sunday': 0, 'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6 };
+        
+        // Helper to parse time string
+        function parseTime(timeStr) {
+            if (!timeStr) return null;
+            const formats = [
+                /(\d{1,2}):(\d{2})\s*(AM|PM)/i,
+                /(\d{1,2}):(\d{2})/,
+                /(\d{1,2})\s*(AM|PM)/i,
+            ];
+            for (const format of formats) {
+                const match = timeStr.match(format);
+                if (match) {
+                    let hours = parseInt(match[1]);
+                    const minutes = match[2] && !isNaN(parseInt(match[2])) ? parseInt(match[2]) : 0;
+                    const ampm = match[3]?.toUpperCase();
+                    if (ampm === 'PM' && hours !== 12) hours += 12;
+                    if (ampm === 'AM' && hours === 12) hours = 0;
+                    return { hours, minutes };
+                }
+            }
+            return null;
+        }
+        
+        // Generate recurring events for the date range
+        function createRecurringEvents(title, timeStr, durationMinutes, daysOfWeek, source = 'onboarding') {
+            const parsedTime = parseTime(timeStr);
+            if (!parsedTime) return;
+            
+            const currentDate = new Date(startDate);
+            while (currentDate <= endDate) {
+                const dayOfWeek = currentDate.getDay();
+                if (daysOfWeek.includes(dayOfWeek)) {
+                    const eventStart = new Date(currentDate);
+                    eventStart.setHours(parsedTime.hours, parsedTime.minutes, 0, 0);
+                    const eventEnd = new Date(eventStart);
+                    eventEnd.setMinutes(eventEnd.getMinutes() + durationMinutes);
+                    
+                    events.push({
+                        id: `onboarding-${title.toLowerCase().replace(/\s+/g, '-')}-${eventStart.toISOString()}`,
+                        title: title,
+                        start: eventStart.toISOString(),
+                        end: eventEnd.toISOString(),
+                        calendarType: 'zeitline',
+                        calendarName: 'My Routine',
+                        source: source,
+                        isFromOnboarding: true
+                    });
+                }
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+        }
+        
+        const weekdays = [1, 2, 3, 4, 5]; // Mon-Fri
+        const weekends = [0, 6]; // Sun, Sat
+        
+        // Generate weekday events
+        if (wakeTime) createRecurringEvents('🌅 Wake Up', wakeTime, 30, weekdays);
+        if (breakfastTime) createRecurringEvents('🍳 Breakfast', breakfastTime, 45, weekdays);
+        if (workStart && workEnd) {
+            const workStartParsed = parseTime(workStart);
+            const workEndParsed = parseTime(workEnd);
+            if (workStartParsed && workEndParsed) {
+                const durationMinutes = (workEndParsed.hours * 60 + workEndParsed.minutes) - (workStartParsed.hours * 60 + workStartParsed.minutes);
+                if (durationMinutes > 0) {
+                    createRecurringEvents('💼 Work', workStart, durationMinutes, weekdays);
+                }
+            }
+        }
+        if (lunchTime) createRecurringEvents('🥗 Lunch', lunchTime, 60, weekdays);
+        if (dinnerTime) createRecurringEvents('🍽️ Dinner', dinnerTime, 60, weekdays);
+        if (exerciseTime && exerciseDays.length > 0) {
+            const exerciseDayNumbers = exerciseDays.map(d => dayMap[d.toLowerCase()]).filter(d => d !== undefined);
+            createRecurringEvents('🏋️ Exercise', exerciseTime, 60, exerciseDayNumbers);
+        }
+        if (bedtime) createRecurringEvents('😴 Bedtime', bedtime, 30, weekdays);
+        
+        // Generate weekend events (if different from weekday)
+        const weekendWake = weekend.wakeTime || collectedData.wakeTimeWeekend;
+        const weekendBedtime = weekend.bedtime || collectedData.bedtimeWeekend;
+        if (weekendWake) createRecurringEvents('🌅 Weekend Wake Up', weekendWake, 30, weekends);
+        if (weekendBedtime) createRecurringEvents('😴 Weekend Bedtime', weekendBedtime, 30, weekends);
+        
+        console.log(`✅ Generated ${events.length} events from onboarding data`);
+        return events;
+    } catch (error) {
+        console.warn('⚠️ Error parsing onboarding data:', error);
+        return [];
+    }
+}
+
 async function loadCalendarEvents() {
     try {
         let startDate, endDate;
@@ -959,6 +1263,18 @@ async function loadCalendarEvents() {
             }
         }
         
+        // Always try to add events from onboarding data (AI conversation)
+        // These are generated from the user's routines collected during onboarding
+        try {
+            const onboardingEvents = generateEventsFromOnboarding(startDate, endDate);
+            if (onboardingEvents && onboardingEvents.length > 0) {
+                console.log(`📅 Adding ${onboardingEvents.length} events from onboarding data`);
+                events = [...events, ...onboardingEvents];
+            }
+        } catch (onboardingError) {
+            console.warn('⚠️ Error loading onboarding events:', onboardingError);
+        }
+        
         calendarEvents = {};
         
         events.forEach(event => {
@@ -981,16 +1297,39 @@ async function loadCalendarEvents() {
                     calendarEvents[dateStr] = [];
                 }
                 calendarEvents[dateStr].push(event);
+                
+                // Log Zeitline events for debugging
+                if (event.calendarType === 'zeitline' && event.source === 'onboarding') {
+                    console.log('📅 Zeitline onboarding event loaded:', {
+                        title: event.title,
+                        date: dateStr,
+                        start: event.start,
+                        recurring: event.recurring ? 'Yes' : 'No'
+                    });
+                }
             } catch (error) {
                 console.error('Error processing event:', error, event);
             }
         });
         
         console.log(`Organized events into ${Object.keys(calendarEvents).length} days`);
+        
+        // Count Zeitline onboarding events
+        const zeitlineEvents = Object.values(calendarEvents).flat().filter(e => 
+            e.calendarType === 'zeitline' && e.source === 'onboarding'
+        );
+        if (zeitlineEvents.length > 0) {
+            console.log(`✅ Found ${zeitlineEvents.length} Zeitline onboarding events:`, 
+                zeitlineEvents.map(e => e.title));
+        } else {
+            console.log('ℹ️ No Zeitline onboarding events found. Check if onboarding data exists and calendar was populated.');
+        }
+        
         if (Object.keys(calendarEvents).length > 0) {
             console.log('Calendar events by date:', Object.keys(calendarEvents).slice(0, 10).map(date => ({
                 date,
                 count: calendarEvents[date].length,
+                zeitlineCount: calendarEvents[date].filter(e => e.calendarType === 'zeitline' && e.source === 'onboarding').length,
                 sample: calendarEvents[date][0]?.title
             })));
         } else {

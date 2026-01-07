@@ -60,6 +60,7 @@ const questionFlows = {
                 message: "What do you do for work? Or if you're a student, retired, or between things – that counts too! I'm curious about how you spend your days.",
                 field: 'occupation',
                 type: 'text',
+                parse: (v) => extractOccupation(v),
                 response: (v) => {
                     const lower = v.toLowerCase();
                     if (lower.includes('engineer') || lower.includes('developer') || lower.includes('programmer')) {
@@ -77,7 +78,23 @@ const questionFlows = {
                     if (lower.includes('retire')) {
                         return "Congratulations on reaching that milestone! What are you enjoying most about this chapter?";
                     }
-                    return `Interesting! Being a ${v} sounds like it has its own unique challenges and rewards. What do you enjoy most about it?`;
+                    if (lower.includes('designer')) {
+                        return "A designer! Creative work that shapes how people interact with the world. I love that. What kind of design do you focus on?";
+                    }
+                    if (lower.includes('manager') || lower.includes('director') || lower.includes('lead')) {
+                        return "Leadership role! Guiding teams and making things happen. What's the most rewarding part of leading others?";
+                    }
+                    if (lower.includes('writer') || lower.includes('content') || lower.includes('journalist')) {
+                        return "A wordsmith! Communication is such a powerful skill. What kind of writing do you do?";
+                    }
+                    if (lower.includes('sales') || lower.includes('business development')) {
+                        return "Sales and relationship building – that takes real people skills. What industry are you in?";
+                    }
+                    if (lower.includes('entrepreneur') || lower.includes('founder') || lower.includes('own business')) {
+                        return "An entrepreneur! That takes real courage and vision. What does your business do?";
+                    }
+                    // v is already the parsed occupation (extracted from the parse function)
+                    return `Interesting! ${v} sounds like it has its own unique challenges and rewards. What do you enjoy most about it?`;
                 }
             },
             {
@@ -778,9 +795,51 @@ function setupEventListeners() {
 
 // ==================== CONVERSATION FLOW ====================
 
-function startConversation() {
+async function startConversation() {
     const flow = questionFlows[state.section];
     
+    // Try to use AI API for initial message if available
+    if (state.useAI && typeof apiCall === 'function') {
+        try {
+            const response = await apiCall('/onboarding/start', {
+                method: 'POST',
+                body: JSON.stringify({
+                    mode: state.mode,
+                    section: state.section
+                })
+            });
+            
+            if (response.success && response.data) {
+                const { message, state: apiState, suggestedResponses } = response.data;
+                
+                // Update local state
+                state.conversationHistory = apiState.conversationHistory || [];
+                state.collectedData = { ...state.collectedData, ...(apiState.collectedData || {}) };
+                state.section = apiState.section || state.section;
+                
+                // Show welcome message
+                addMessage(message, 'assistant');
+                
+                // Show suggested responses if available
+                if (suggestedResponses && suggestedResponses.length > 0) {
+                    setTimeout(() => {
+                        showAISuggestedResponses(suggestedResponses);
+                    }, 500);
+                }
+                
+                // Save state
+                saveData();
+                updateSectionNav();
+                updateProgress();
+                return;
+            }
+        } catch (error) {
+            console.error('AI start error, using local flow:', error);
+            // Fall through to local flow
+        }
+    }
+    
+    // Fallback to local flow
     if (state.mode === 'new') {
         // New user welcome
         const greeting = getTimeGreeting();
@@ -939,7 +998,7 @@ function handleKeyDown(e) {
     }
 }
 
-function sendMessage() {
+async function sendMessage() {
     const text = elements.chatInput.value.trim();
     if (!text) return;
     
@@ -954,19 +1013,97 @@ function sendMessage() {
     // Add user message
     addMessage(text, 'user');
     
-    // Get current question
-    const flow = questionFlows[state.section];
-    const question = flow.questions[state.questionIndex];
+    // Show typing indicator
+    showTypingIndicator();
     
-    // Process the response
-    processResponse(text, question);
+    // Use AI API if available, otherwise fall back to fixed flow
+    if (state.useAI && typeof apiCall === 'function') {
+        try {
+            await processWithAI(text);
+        } catch (error) {
+            console.error('AI error, falling back to local flow:', error);
+            // Fall back to local flow
+            const flow = questionFlows[state.section];
+            const question = flow.questions[state.questionIndex];
+            processResponse(text, question);
+        }
+    } else {
+        // Use fixed question flow
+        const flow = questionFlows[state.section];
+        const question = flow.questions[state.questionIndex];
+        processResponse(text, question);
+    }
+}
+
+async function processWithAI(userMessage) {
+    try {
+        // Prepare state for API
+        const apiState = {
+            section: state.section,
+            conversationHistory: state.conversationHistory,
+            collectedData: state.collectedData,
+            questionsAsked: []
+        };
+        
+        // Call AI API
+        const response = await apiCall('/onboarding/chat', {
+            method: 'POST',
+            body: JSON.stringify({
+                message: userMessage,
+                state: apiState
+            })
+        });
+        
+        if (response.success && response.data) {
+            const { message, dataCollected, nextQuestion, sectionComplete, suggestedResponses, updatedState } = response.data;
+            
+            // Update state with AI response
+            state.conversationHistory = updatedState.conversationHistory;
+            state.collectedData = { ...state.collectedData, ...dataCollected };
+            saveData();
+            
+            // Hide typing indicator
+            hideTypingIndicator();
+            
+            // Show AI response
+            addMessage(message, 'assistant');
+            
+            // Show suggested responses if available
+            if (suggestedResponses && suggestedResponses.length > 0) {
+                setTimeout(() => {
+                    showAISuggestedResponses(suggestedResponses);
+                }, 500);
+            }
+            
+            // Handle section completion
+            if (sectionComplete) {
+                setTimeout(() => {
+                    markSectionComplete();
+                    moveToNextSection();
+                }, 2000);
+            } else if (nextQuestion) {
+                // AI will ask next question in the response message
+                // No need to manually advance
+            }
+        } else {
+            throw new Error(response.error || 'AI response failed');
+        }
+    } catch (error) {
+        console.error('AI processing error:', error);
+        hideTypingIndicator();
+        addMessage("I'm having trouble processing that. Could you try rephrasing?", 'assistant');
+        // Fall back to local flow
+        const flow = questionFlows[state.section];
+        const question = flow.questions[state.questionIndex];
+        processResponse(userMessage, question);
+    }
 }
 
 function processResponse(value, question) {
     let processedValue = value;
     
     // Parse dates
-    if (question.type === 'date') {
+    if (question && question.type === 'date') {
         const parsed = parseDate(value);
         if (parsed) {
             processedValue = parsed.toISOString().split('T')[0];
@@ -976,8 +1113,13 @@ function processResponse(value, question) {
         }
     }
     
+    // Apply custom parse function if defined
+    if (question && question.parse && typeof question.parse === 'function') {
+        processedValue = question.parse(value);
+    }
+    
     // Validate if needed
-    if (question.validate && !question.validate(processedValue)) {
+    if (question && question.validate && !question.validate(processedValue)) {
         showTypingIndicator();
         setTimeout(() => {
             hideTypingIndicator();
@@ -987,13 +1129,13 @@ function processResponse(value, question) {
     }
     
     // Store the data
-    if (question.field) {
+    if (question && question.field) {
         state.collectedData[question.field] = processedValue;
         saveData();
     }
     
     // Show response
-    if (question.response) {
+    if (question && question.response) {
         showTypingIndicator();
         setTimeout(() => {
             hideTypingIndicator();
@@ -1010,6 +1152,27 @@ function processResponse(value, question) {
     }
 }
 
+function showAISuggestedResponses(suggestions) {
+    elements.suggestedResponses.innerHTML = '';
+    elements.suggestedResponses.classList.remove('multi-select');
+    
+    suggestions.forEach(suggestion => {
+        const btn = document.createElement('button');
+        btn.className = 'suggestion-btn';
+        btn.textContent = suggestion;
+        
+        btn.addEventListener('click', () => {
+            elements.suggestedResponses.classList.remove('active');
+            addMessage(suggestion, 'user');
+            sendMessage();
+        });
+        
+        elements.suggestedResponses.appendChild(btn);
+    });
+    
+    elements.suggestedResponses.classList.add('active');
+}
+
 function advanceToNextQuestion() {
     state.questionIndex++;
     saveData();
@@ -1022,6 +1185,15 @@ function advanceToNextQuestion() {
 function addMessage(text, sender) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${sender}`;
+    
+    // Update conversation history for AI
+    if (!state.conversationHistory) {
+        state.conversationHistory = [];
+    }
+    state.conversationHistory.push({
+        role: sender === 'assistant' ? 'assistant' : 'user',
+        content: text
+    });
     
     const avatarContent = sender === 'assistant' ? 'Z' : '👤';
     
@@ -1286,6 +1458,21 @@ function parseDate(text) {
         return date;
     }
     return null;
+}
+
+function extractOccupation(text) {
+    // Remove common prefixes like "I'm a", "I am a", "I work as a", etc.
+    let occupation = text
+        .replace(/^(i'm a|i am a|i'm an|i am an|i work as a|i work as an|i'm|i am)\s+/i, '')
+        .replace(/^(a|an)\s+/i, '')
+        .trim();
+    
+    // Capitalize first letter
+    if (occupation.length > 0) {
+        occupation = occupation.charAt(0).toUpperCase() + occupation.slice(1);
+    }
+    
+    return occupation;
 }
 
 function calculateAge(birthDate) {

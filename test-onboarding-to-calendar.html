@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test: Onboarding to Calendar</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: #0a0a0a;
+            color: #e0e0e0;
+        }
+        .test-section {
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        h1 { color: #c9ff57; }
+        h2 { color: #57ffd4; margin-top: 0; }
+        button {
+            background: #c9ff57;
+            color: #0a0a0a;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            margin: 0.5rem 0.5rem 0.5rem 0;
+        }
+        button:hover { background: #b8e84a; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .log {
+            background: #0f0f0f;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 1rem;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+        }
+        .log-entry {
+            margin: 0.25rem 0;
+            padding: 0.25rem;
+        }
+        .log-success { color: #57ffd4; }
+        .log-error { color: #ff6b6b; }
+        .log-info { color: #87ceeb; }
+        .log-warning { color: #ffd93d; }
+        pre {
+            background: #0a0a0a;
+            padding: 0.5rem;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test: Onboarding Data → Calendar Events</h1>
+    <p>This page tests if onboarding answers are correctly transferred to calendar events.</p>
+    
+    <div class="test-section">
+        <h2>Step 1: Check Authentication</h2>
+        <button onclick="checkAuth()">Check if Logged In</button>
+        <div id="authStatus" class="log"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Step 2: Create Mock Onboarding Data</h2>
+        <p>This creates sample onboarding data with time-based routines (wake up, meals, work, exercise, bedtime)</p>
+        <button onclick="createMockOnboardingData()">Create Mock Data</button>
+        <div id="mockDataStatus" class="log"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Step 3: Populate Calendar from Onboarding</h2>
+        <p>This calls the API to create calendar events from the onboarding data</p>
+        <button onclick="populateCalendar()">Populate Calendar</button>
+        <div id="populateStatus" class="log"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Step 4: Verify Events in Calendar</h2>
+        <p>Check if the events were created and are visible</p>
+        <button onclick="verifyEvents()">Check Events</button>
+        <div id="verifyStatus" class="log"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Step 5: View Calendar</h2>
+        <button onclick="window.open('/calendar.html', '_blank')">Open Calendar in New Tab</button>
+        <p style="margin-top: 0.5rem; color: #888;">After populating, open the calendar to see if events appear</p>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <!-- Load firebase-config but prevent auth state observer from interfering -->
+    <script>
+        // Load firebase config inline to have more control
+        const firebaseConfig = {
+            apiKey: "AIzaSyCh1_h1BRyDR7xyGeokxTXJ5ie_q_w7778",
+            authDomain: "zeitlineai.firebaseapp.com",
+            projectId: "zeitlineai",
+            storageBucket: "zeitlineai.firebasestorage.app",
+            messagingSenderId: "78709689112",
+            appId: "1:78709689112:web:eeb08e745cdd9c6880ac6d"
+        };
+        
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        
+        // Initialize auth but don't set up observers that might interfere
+        const auth = firebase.auth();
+        
+        // Set persistence to SESSION (same as main app)
+        auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+            .then(() => {
+                console.log("Auth persistence set to SESSION (test page)");
+            })
+            .catch((error) => {
+                console.error("Error setting persistence:", error);
+            });
+        
+        // Wait for auth state to initialize before doing anything
+        // This prevents race conditions where user appears logged out initially
+        let authInitialized = false;
+        auth.onAuthStateChanged((user) => {
+            if (!authInitialized) {
+                authInitialized = true;
+                console.log("Auth state initialized on test page:", user ? user.email : "no user");
+                // Don't remove token if user is null - might be a race condition
+                if (user) {
+                    user.getIdToken(false).then((token) => {
+                        localStorage.setItem("authToken", token);
+                    }).catch(() => {
+                        // Ignore token errors
+                    });
+                }
+            }
+        });
+        
+        // Don't set up additional observers that might interfere
+        // We'll check auth manually when needed
+    </script>
+    
+    <script>
+        // Use the API_BASE_URL - if on hosting emulator (port 5500), use /api
+        // Otherwise use functions emulator directly (port 9000)
+        const currentPort = window.location.port;
+        let TEST_API_BASE_URL;
+        if (window.location.hostname === "localhost") {
+            if (currentPort === "5500" || currentPort === "5000") {
+                // Using hosting emulator - use /api (rewritten to functions)
+                TEST_API_BASE_URL = "/api";
+            } else {
+                // Direct functions emulator access
+                TEST_API_BASE_URL = "http://localhost:9000/zeitlineai/us-central1/api";
+            }
+        } else {
+            TEST_API_BASE_URL = "https://us-central1-zeitlineai.cloudfunctions.net/api";
+        }
+
+        async function testApiCall(endpoint, options = {}) {
+            // Try to get a fresh token from Firebase auth first
+            let token = null;
+            const user = firebase.auth().currentUser;
+            if (user) {
+                try {
+                    token = await user.getIdToken(false);
+                    localStorage.setItem("authToken", token);
+                    console.log("Got fresh token from Firebase user");
+                } catch (e) {
+                    console.warn("Could not get token from Firebase user:", e);
+                    token = localStorage.getItem("authToken");
+                }
+            } else {
+                token = localStorage.getItem("authToken");
+                console.log("No Firebase user, using localStorage token");
+            }
+            
+            if (!token) {
+                throw new Error("No auth token available. Please log in first.");
+            }
+            
+            const headers = {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`,
+                ...options.headers,
+            };
+
+            console.log("Making API call to:", TEST_API_BASE_URL + endpoint);
+            console.log("Token available:", !!token, "Token length:", token?.length);
+
+            const response = await fetch(`${TEST_API_BASE_URL}${endpoint}`, {
+                ...options,
+                headers,
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || "API request failed");
+            }
+            return data;
+        }
+
+        function log(elementId, message, type = 'info') {
+            const logEl = document.getElementById(elementId);
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        async function checkAuth() {
+            const logEl = document.getElementById('authStatus');
+            logEl.innerHTML = '';
+            
+            log('authStatus', 'Checking authentication...', 'info');
+            
+            if (typeof firebase === 'undefined' || !firebase.auth) {
+                log('authStatus', '❌ Firebase not loaded', 'error');
+                return false;
+            }
+            
+            // Wait for auth state to initialize (up to 2 seconds)
+            log('authStatus', 'Waiting for auth state to initialize...', 'info');
+            let user = null;
+            for (let i = 0; i < 20; i++) {
+                user = firebase.auth().currentUser;
+                if (user || i > 10) break; // Stop early if user found, or after 1 second
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // Check current user
+            if (!user) {
+                user = firebase.auth().currentUser; // Final check
+            }
+            
+            // Also check if there's a token in localStorage (might be from another tab)
+            const existingToken = localStorage.getItem('authToken');
+            
+            if (!user && !existingToken) {
+                log('authStatus', '❌ User not logged in', 'error');
+                log('authStatus', '💡 You need to log in on the SAME port as this test page.', 'warning');
+                log('authStatus', `📍 Current URL: ${window.location.origin}`, 'info');
+                log('authStatus', '🔗 Click here to log in: ' + window.location.origin + '/login.html', 'info');
+                
+                // Create a clickable login link
+                const linkEntry = document.createElement('div');
+                linkEntry.className = 'log-entry log-success';
+                linkEntry.innerHTML = `<a href="${window.location.origin}/login.html" style="color: #c9ff57; text-decoration: underline;">👉 Click here to log in</a>`;
+                document.getElementById('authStatus').appendChild(linkEntry);
+                
+                return false;
+            }
+            
+            if (user) {
+                log('authStatus', `✅ User logged in: ${user.email}`, 'success');
+                log('authStatus', `User ID: ${user.uid}`, 'info');
+                
+                // Get token (don't force refresh to avoid logging out)
+                try {
+                    const token = await user.getIdToken(false);
+                    localStorage.setItem('authToken', token);
+                    log('authStatus', '✅ Auth token retrieved', 'success');
+                } catch (e) {
+                    log('authStatus', `⚠️ Could not get token: ${e.message}`, 'warning');
+                    // If we have an existing token, use it
+                    if (existingToken && existingToken !== 'test-token-12345') {
+                        log('authStatus', '✅ Using existing token from localStorage', 'info');
+                    }
+                }
+            } else if (existingToken && existingToken !== 'test-token-12345') {
+                log('authStatus', '⚠️ No Firebase user but found token in localStorage', 'warning');
+                log('authStatus', '💡 You may need to refresh or log in again', 'warning');
+                log('authStatus', 'But we can still try to use the existing token for API calls', 'info');
+            }
+            
+            return user !== null;
+        }
+
+        function createMockOnboardingData() {
+            const logEl = document.getElementById('mockDataStatus');
+            logEl.innerHTML = '';
+            
+            log('mockDataStatus', 'Creating mock onboarding data with time-based routines...', 'info');
+            
+            // Create realistic onboarding data with time-based routines
+            const mockData = {
+                section: 'goals',
+                questionIndex: 0,
+                collectedData: {
+                    fullName: 'Test User',
+                    age: 28,
+                    occupation: 'Software Engineer',
+                    city: 'San Francisco',
+                    timezone: 'America/Los_Angeles',
+                    
+                    // Weekday routines (with aliases for compatibility)
+                    wakeTime: '7:00 AM',
+                    wakeTimeWeekday: '7:00 AM',
+                    bedtime: '11:00 PM',
+                    bedtimeWeekday: '11:00 PM',
+                    workStartTime: '9:00 AM',
+                    workEndTime: '5:00 PM',
+                    breakfastTime: '8:00 AM',
+                    lunchTime: '12:30 PM',
+                    dinnerTime: '7:00 PM',
+                    exerciseTime: '6:00 PM',
+                    exerciseDays: ['monday', 'wednesday', 'friday'],
+                    exerciseDuration: '60',
+                    
+                    // Weekend routines
+                    wakeTimeWeekend: '9:00 AM',
+                    bedtimeWeekend: '12:30 AM',
+                    
+                    // Structured routines object (for API)
+                    routines: {
+                        weekday: {
+                            wakeTime: '7:00 AM',
+                            bedtime: '11:00 PM',
+                            workStart: '9:00 AM',
+                            workEnd: '5:00 PM',
+                            meals: {
+                                breakfast: '8:00 AM',
+                                lunch: '12:30 PM',
+                                dinner: '7:00 PM'
+                            },
+                            exercise: {
+                                time: '6:00 PM',
+                                days: ['monday', 'wednesday', 'friday'],
+                                duration: '60'
+                            }
+                        },
+                        weekend: {
+                            wakeTime: '9:00 AM',
+                            bedtime: '12:30 AM',
+                            meals: {
+                                breakfast: '10:00 AM',
+                                lunch: '1:00 PM',
+                                dinner: '8:00 PM'
+                            }
+                        }
+                    },
+                    
+                    // Additional data
+                    workStyle: 'remote',
+                    exerciseFrequency: '3-4 times a week',
+                    dietType: 'none',
+                    cookingFrequency: 'often'
+                },
+                timestamp: Date.now()
+            };
+            
+            // Save to localStorage
+            localStorage.setItem('zeitline_onboarding_data', JSON.stringify(mockData));
+            localStorage.removeItem('zeitline_calendar_populated'); // Reset so it will populate again
+            
+            log('mockDataStatus', '✅ Mock onboarding data created and saved to localStorage', 'success');
+            log('mockDataStatus', 'Data includes:', 'info');
+            log('mockDataStatus', `  - Wake up: ${mockData.collectedData.wakeTimeWeekday} (weekday), ${mockData.collectedData.wakeTimeWeekend} (weekend)`, 'info');
+            log('mockDataStatus', `  - Work: ${mockData.collectedData.workStartTime} - ${mockData.collectedData.workEndTime}`, 'info');
+            log('mockDataStatus', `  - Meals: Breakfast ${mockData.collectedData.breakfastTime}, Lunch ${mockData.collectedData.lunchTime}, Dinner ${mockData.collectedData.dinnerTime}`, 'info');
+            log('mockDataStatus', `  - Exercise: ${mockData.collectedData.exerciseTime} on ${mockData.collectedData.exerciseDays.join(', ')}`, 'info');
+            log('mockDataStatus', `  - Bedtime: ${mockData.collectedData.bedtimeWeekday} (weekday), ${mockData.collectedData.bedtimeWeekend} (weekend)`, 'info');
+            
+            return mockData;
+        }
+
+        async function populateCalendar() {
+            const logEl = document.getElementById('populateStatus');
+            logEl.innerHTML = '';
+            
+            // Check auth first
+            const isAuth = await checkAuth();
+            if (!isAuth) {
+                log('populateStatus', '❌ Cannot populate calendar - user not logged in', 'error');
+                return;
+            }
+            
+            log('populateStatus', 'Loading onboarding data...', 'info');
+            
+            const onboardingData = localStorage.getItem('zeitline_onboarding_data');
+            if (!onboardingData) {
+                log('populateStatus', '❌ No onboarding data found. Run Step 2 first.', 'error');
+                return;
+            }
+            
+            const parsed = JSON.parse(onboardingData);
+            const collectedData = parsed.collectedData || {};
+            
+            log('populateStatus', 'Transforming data to routines format...', 'info');
+            
+            // Transform to routines format
+            const routines = {
+                weekday: {
+                    wakeTime: collectedData.wakeTimeWeekday || collectedData.wakeTime,
+                    bedtime: collectedData.bedtimeWeekday || collectedData.bedtime,
+                    workStart: collectedData.workStartTime,
+                    workEnd: collectedData.workEndTime,
+                    meals: {
+                        breakfast: collectedData.breakfastTime,
+                        lunch: collectedData.lunchTime,
+                        dinner: collectedData.dinnerTime,
+                    },
+                    exercise: collectedData.exerciseTime ? {
+                        time: collectedData.exerciseTime,
+                        days: collectedData.exerciseDays || [],
+                        duration: collectedData.exerciseDuration || "60",
+                    } : null,
+                },
+                weekend: {
+                    wakeTime: collectedData.wakeTimeWeekend,
+                    bedtime: collectedData.bedtimeWeekend,
+                    meals: {
+                        breakfast: collectedData.breakfastTime,
+                        lunch: collectedData.lunchTime,
+                        dinner: collectedData.dinnerTime,
+                    },
+                },
+            };
+            
+            const onboardingDataForAPI = {
+                ...collectedData,
+                routines,
+            };
+            
+            // Get the current user's UID so events are created under their account
+            let uid = null;
+            const user = firebase.auth().currentUser;
+            if (user) {
+                uid = user.uid;
+                log('populateStatus', `Using logged-in user UID: ${uid}`, 'info');
+            } else {
+                uid = 'test-user-calendar'; // Fallback for testing without login
+                log('populateStatus', `⚠️ No logged-in user, using test UID: ${uid}`, 'warning');
+            }
+            
+            log('populateStatus', 'Calling API to populate calendar...', 'info');
+            log('populateStatus', `API URL: ${TEST_API_BASE_URL}/calendars/populate-from-onboarding-test`, 'info');
+            
+            try {
+                const response = await testApiCall('/calendars/populate-from-onboarding-test', {
+                    method: 'POST',
+                    body: JSON.stringify({ 
+                        uid: uid, // Send the user's UID so events are created for them
+                        onboardingData: onboardingDataForAPI 
+                    })
+                });
+                
+                if (response.success) {
+                    log('populateStatus', `✅ Successfully created ${response.data.eventsCreated} calendar events!`, 'success');
+                    log('populateStatus', 'Created events:', 'info');
+                    
+                    if (response.data.events && response.data.events.length > 0) {
+                        response.data.events.forEach(event => {
+                            log('populateStatus', `  - ${event.title}: ${event.start} (recurring: ${event.recurring ? 'Yes' : 'No'})`, 'success');
+                        });
+                    }
+                    
+                    localStorage.setItem('zeitline_calendar_populated', 'true');
+                    log('populateStatus', '✅ Calendar populated flag set', 'success');
+                } else {
+                    log('populateStatus', `❌ API returned error: ${response.error}`, 'error');
+                }
+            } catch (error) {
+                log('populateStatus', `❌ Error calling API: ${error.message}`, 'error');
+                log('populateStatus', 'Full error:', 'error');
+                log('populateStatus', error.stack || JSON.stringify(error, null, 2), 'error');
+                
+                if (error.message.includes('Failed to fetch') || error.message.includes('404')) {
+                    log('populateStatus', '💡 Make sure Firebase Functions are running:', 'warning');
+                    log('populateStatus', '   cd functions && npm run serve', 'warning');
+                }
+            }
+        }
+
+        async function verifyEvents() {
+            const logEl = document.getElementById('verifyStatus');
+            logEl.innerHTML = '';
+            
+            log('verifyStatus', 'Checking if events were created...', 'info');
+            
+            // Check if the populate step was successful by looking at the last populate status
+            const populateLog = document.getElementById('populateStatus');
+            const hasSuccess = populateLog && populateLog.textContent.includes('✅');
+            
+            if (hasSuccess) {
+                log('verifyStatus', '✅ Events were created successfully in Step 3!', 'success');
+                log('verifyStatus', '', 'info');
+                log('verifyStatus', '📍 Events are stored in Firestore under:', 'info');
+                log('verifyStatus', '   users/test-user-calendar/calendar_events/', 'info');
+                log('verifyStatus', '', 'info');
+                log('verifyStatus', '🔍 To verify in Firebase Console:', 'info');
+                log('verifyStatus', '   1. Go to http://localhost:4000/firestore', 'info');
+                log('verifyStatus', '   2. Navigate to users > test-user-calendar > calendar_events', 'info');
+                log('verifyStatus', '   3. You should see the created events', 'info');
+                log('verifyStatus', '', 'info');
+                log('verifyStatus', '📅 Or open the calendar page to see them visually', 'success');
+                
+                // Add link to Firestore emulator
+                const linkEntry = document.createElement('div');
+                linkEntry.className = 'log-entry log-success';
+                linkEntry.innerHTML = `<a href="http://localhost:4000/firestore" target="_blank" style="color: #c9ff57; text-decoration: underline;">👉 Open Firestore Emulator UI</a>`;
+                logEl.appendChild(linkEntry);
+            } else {
+                log('verifyStatus', '⚠️ Step 3 (Populate Calendar) needs to be completed first', 'warning');
+                log('verifyStatus', 'Please complete Steps 2 and 3 before verifying', 'info');
+            }
+        }
+
+        // Don't auto-check auth on load - let user click the button
+        // This prevents any potential auth state conflicts
+        // window.addEventListener('load', () => {
+        //     setTimeout(() => {
+        //         try {
+        //             checkAuth();
+        //         } catch (e) {
+        //             console.log('Auto-check auth skipped:', e.message);
+        //         }
+        //     }, 1000);
+        // });
+    </script>
+</body>
+</html>
+
