@@ -1242,23 +1242,43 @@
         firebase.initializeApp(firebaseConfig);
         
         // Check if user is already logged in and onboarding is complete
-        firebase.auth().onAuthStateChanged((user) => {
+        firebase.auth().onAuthStateChanged(async (user) => {
             if (user) {
                 // User is signed in - check if onboarding is complete
-                const onboardingComplete = localStorage.getItem("zeitline_onboarding_complete") === "true";
-                const savedProfile = localStorage.getItem("zeitline_profile");
+                let onboardingComplete = localStorage.getItem("zeitline_onboarding_complete") === "true";
+                
+                // If not in localStorage, check API
+                if (!onboardingComplete) {
+                    try {
+                        const token = await user.getIdToken();
+                        const response = await fetch("https://us-central1-zeitlineai.cloudfunctions.net/api/users/profile", {
+                            headers: {
+                                "Content-Type": "application/json",
+                                "Authorization": `Bearer ${token}`
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            if (data.data) {
+                                const profile = data.data;
+                                localStorage.setItem("zeitline_profile", JSON.stringify(profile));
+                                
+                                if (profile.onboardingComplete || 
+                                    (profile.personal && profile.personal.fullName && profile.personal.age)) {
+                                    onboardingComplete = true;
+                                    localStorage.setItem("zeitline_onboarding_complete", "true");
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.log("Could not fetch profile:", e);
+                    }
+                }
                 
                 if (onboardingComplete) {
                     // Redirect to dashboard
                     window.location.href = "/dashboard.html";
-                } else if (savedProfile) {
-                    try {
-                        const profile = JSON.parse(savedProfile);
-                        if (profile.onboardingComplete) {
-                            localStorage.setItem("zeitline_onboarding_complete", "true");
-                            window.location.href = "/dashboard.html";
-                        }
-                    } catch (e) {}
                 }
             }
         });

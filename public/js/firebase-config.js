@@ -33,14 +33,44 @@ const API_BASE_URL =
 // Auth state observer
 let currentUser = null;
 
-auth.onAuthStateChanged((user) => {
+auth.onAuthStateChanged(async (user) => {
   currentUser = user;
   if (user) {
     console.log("User signed in:", user.email);
     // Store token for API calls
-    user.getIdToken().then((token) => {
-      localStorage.setItem("authToken", token);
-    });
+    const token = await user.getIdToken();
+    localStorage.setItem("authToken", token);
+    
+    // Fetch profile from API to sync onboarding status
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/profile`, {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data) {
+          const profile = data.data;
+          
+          // Save profile to localStorage
+          localStorage.setItem("zeitline_profile", JSON.stringify(profile));
+          
+          // Sync onboarding status
+          if (profile.onboardingComplete || 
+              (profile.personal && profile.personal.fullName && profile.personal.age)) {
+            localStorage.setItem("zeitline_onboarding_complete", "true");
+          }
+          
+          console.log("Profile synced from server, onboarding complete:", 
+            profile.onboardingComplete || false);
+        }
+      }
+    } catch (e) {
+      console.log("Could not fetch profile from API:", e.message);
+    }
   } else {
     console.log("User signed out");
     localStorage.removeItem("authToken");

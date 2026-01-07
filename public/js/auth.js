@@ -149,9 +149,27 @@ async function handleGoogleSignIn() {
     const token = await user.getIdToken();
     localStorage.setItem("authToken", token);
 
+    let isExistingUser = false;
+    let hasCompletedOnboardingFromAPI = false;
+
     try {
-      await apiCall("/users/profile");
-      // Profile exists, auth observer will redirect
+      const profileResponse = await apiCall("/users/profile");
+      isExistingUser = true;
+      
+      // Check if onboarding is complete from API response
+      if (profileResponse.data) {
+        const profile = profileResponse.data;
+        
+        // Save profile to localStorage
+        localStorage.setItem("zeitline_profile", JSON.stringify(profile));
+        
+        // Check onboarding status
+        if (profile.onboardingComplete || 
+            (profile.personal && profile.personal.fullName && profile.personal.age)) {
+          hasCompletedOnboardingFromAPI = true;
+          localStorage.setItem("zeitline_onboarding_complete", "true");
+        }
+      }
     } catch {
       // New user, create profile
       await apiCall("/users/create", {
@@ -164,6 +182,17 @@ async function handleGoogleSignIn() {
     }
 
     hideLoading();
+    
+    // Redirect based on onboarding status
+    if (isExistingUser && hasCompletedOnboardingFromAPI) {
+      window.location.href = "/dashboard.html";
+    } else if (isExistingUser) {
+      // Existing user but onboarding not complete
+      window.location.href = "/onboarding.html";
+    } else {
+      // New user - go to onboarding
+      window.location.href = "/onboarding.html";
+    }
   } catch (error) {
     hideLoading();
     console.error("Google sign in error:", error);
