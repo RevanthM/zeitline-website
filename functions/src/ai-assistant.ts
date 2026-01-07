@@ -500,15 +500,87 @@ Keep responses concise (2-3 sentences max) and friendly.`;
 
     const assistantMessage = completion.choices[0].message.content || "";
 
-    // Check if the message contains a request to create/modify recurring events
-    // If so, also parse it and include the pattern
+    // Check if the message contains a request to create any event (one-time or recurring)
+    let parsedEvent = null;
     let parsedPattern = null;
-    if (
-      message.toLowerCase().includes("recur") ||
-      message.toLowerCase().includes("repeat") ||
-      message.toLowerCase().includes("every") ||
-      message.toLowerCase().includes("schedule")
-    ) {
+    
+    const lowerMessage = message.toLowerCase();
+    const isEventCreation = 
+      lowerMessage.includes("create") ||
+      lowerMessage.includes("add") ||
+      lowerMessage.includes("schedule") ||
+      lowerMessage.includes("set up") ||
+      lowerMessage.includes("make") ||
+      lowerMessage.includes("book") ||
+      lowerMessage.includes("plan");
+    
+    const isRecurring = 
+      lowerMessage.includes("recur") ||
+      lowerMessage.includes("repeat") ||
+      lowerMessage.includes("every") ||
+      lowerMessage.includes("daily") ||
+      lowerMessage.includes("weekly") ||
+      lowerMessage.includes("monthly");
+
+    if (isEventCreation) {
+      try {
+        // Parse event details from the message
+        const parseResponse = await getOpenAIClient().chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            {
+              role: "system",
+              content: `You are an event parser. Extract event details from natural language.
+              
+Today's date is: ${new Date().toISOString().split('T')[0]}
+Current time is approximately: ${new Date().toLocaleTimeString()}
+
+Parse relative dates like "today", "tomorrow", "next Monday" relative to today's date.
+Parse relative times like "at 8pm", "in the evening", "morning" into 24-hour format.`,
+            },
+            {
+              role: "user",
+              content: `Extract event details from: "${message}"
+              
+Respond with JSON:
+{
+  "event": {
+    "title": "extracted event title",
+    "date": "YYYY-MM-DD format",
+    "time": "HH:MM in 24-hour format",
+    "duration": number in minutes (default 60),
+    "location": "location if mentioned, or null",
+    "description": "any additional details, or null"
+  },
+  "recurrence": null or {
+    "frequency": "daily" | "weekly" | "monthly" | "yearly",
+    "interval": 1,
+    "daysOfWeek": [0-6] for weekly (0=Sunday)
+  },
+  "confidence": 0-1
+}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.2,
+        });
+
+        const parsed = JSON.parse(
+          parseResponse.choices[0].message.content || "{}"
+        );
+        
+        if (parsed.event && parsed.confidence > 0.5) {
+          parsedEvent = parsed.event;
+          if (parsed.recurrence) {
+            parsedPattern = parsed.recurrence;
+          }
+          console.log("Parsed event from message:", parsedEvent);
+        }
+      } catch (e) {
+        console.log("Could not parse event from chat message:", e);
+      }
+    } else if (isRecurring) {
+      // Just parse recurring pattern without full event details
       try {
         const parseResponse = await getOpenAIClient().chat.completions.create({
           model: "gpt-4o-mini",
@@ -533,7 +605,6 @@ Keep responses concise (2-3 sentences max) and friendly.`;
           parsedPattern = parsed.pattern;
         }
       } catch (e) {
-        // Ignore parsing errors, just continue with text response
         console.log("Could not parse pattern from chat message:", e);
       }
     }
@@ -541,6 +612,7 @@ Keep responses concise (2-3 sentences max) and friendly.`;
     res.json({
       success: true,
       message: assistantMessage,
+      event: parsedEvent,
       pattern: parsedPattern,
     });
     return;

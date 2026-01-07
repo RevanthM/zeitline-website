@@ -2704,10 +2704,81 @@ async function saveQuickCreateEvent(event) {
     }
 }
 
+// Open quick create modal with pre-filled event data from AI
+function openQuickCreateModalWithEvent(eventData, pattern) {
+    const modal = document.getElementById('quickCreateModal');
+    if (!modal) {
+        console.error('Quick create modal not found');
+        return;
+    }
+    
+    // Set title
+    const titleInput = document.getElementById('quickCreateTitle');
+    if (titleInput && eventData.title) {
+        titleInput.value = eventData.title;
+    }
+    
+    // Set date
+    const dateInput = document.getElementById('quickCreateDate');
+    if (dateInput && eventData.date) {
+        dateInput.value = eventData.date;
+    }
+    
+    // Set time
+    const timeInput = document.getElementById('quickCreateTime');
+    if (timeInput && eventData.time) {
+        timeInput.value = eventData.time;
+    }
+    
+    // Set duration
+    const durationSelect = document.getElementById('quickCreateDuration');
+    if (durationSelect && eventData.duration) {
+        // Find closest option
+        const duration = parseInt(eventData.duration);
+        const options = [30, 60, 90, 120, 180, 240, 480];
+        const closest = options.reduce((prev, curr) => 
+            Math.abs(curr - duration) < Math.abs(prev - duration) ? curr : prev
+        );
+        durationSelect.value = closest.toString();
+    }
+    
+    // Set location
+    const locationInput = document.getElementById('quickCreateLocation');
+    if (locationInput && eventData.location) {
+        locationInput.value = eventData.location;
+    }
+    
+    // Set description
+    const descriptionInput = document.getElementById('quickCreateDescription');
+    if (descriptionInput && eventData.description) {
+        descriptionInput.value = eventData.description;
+    }
+    
+    // Set recurrence
+    const recurrenceSelect = document.getElementById('quickCreateRecurrence');
+    if (recurrenceSelect && pattern) {
+        if (pattern.frequency === 'weekly' && pattern.daysOfWeek && 
+            JSON.stringify(pattern.daysOfWeek.sort()) === JSON.stringify([1,2,3,4,5])) {
+            recurrenceSelect.value = 'weekdays';
+        } else if (pattern.frequency) {
+            recurrenceSelect.value = pattern.frequency;
+        }
+        window.pendingRecurringPattern = pattern;
+    } else {
+        if (recurrenceSelect) recurrenceSelect.value = '';
+    }
+    
+    modal.classList.add('active');
+    
+    // Add a message in the AI chat
+    addAIMessage('assistant', `I've pre-filled the event details. Please review and click "Create Event" to add it to your calendar.`);
+}
+
 // Make functions globally accessible
 window.openQuickCreateModal = openQuickCreateModal;
 window.closeQuickCreateModal = closeQuickCreateModal;
 window.saveQuickCreateEvent = saveQuickCreateEvent;
+window.openQuickCreateModalWithEvent = openQuickCreateModalWithEvent;
 
 // UI helpers
 function showError(message) {
@@ -2853,8 +2924,21 @@ window.sendAIMessage = async function(messageText) {
             addAIMessage('assistant', response.message);
             aiConversationHistory.push({ role: 'assistant', content: response.message });
             
-            // If AI detected a recurring pattern, offer to create event
-            if (response.pattern) {
+            // If AI detected an event to create, open the quick create modal
+            if (response.event) {
+                console.log('AI detected event to create:', response.event);
+                
+                // Store pattern if present
+                if (response.pattern) {
+                    window.pendingRecurringPattern = response.pattern;
+                }
+                
+                // Open quick create modal with pre-filled data
+                setTimeout(() => {
+                    openQuickCreateModalWithEvent(response.event, response.pattern);
+                }, 500);
+            } else if (response.pattern) {
+                // Just a recurring pattern suggestion
                 currentAISuggestion = response.pattern;
                 addAIPatternSuggestion(response.pattern, message);
             }
