@@ -64,6 +64,21 @@ service cloud.firestore {
       match /calendar_events/{eventId} {
         allow read, write: if isOwner(userId);
       }
+      
+      // User's health data subcollection (from Apple Health)
+      match /health/{sampleId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's health summaries subcollection (daily summaries for website)
+      match /healthSummaries/{dateId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's workouts subcollection
+      match /workouts/{workoutId} {
+        allow read, write: if isOwner(userId);
+      }
     }
     
     // OAuth states collection (temporary, for OAuth flow)

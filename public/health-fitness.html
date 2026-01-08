@@ -46,7 +46,6 @@
         }
         
         .sync-status {
-            margin-left: auto;
             display: flex;
             align-items: center;
             gap: 0.5rem;
@@ -55,6 +54,7 @@
             border-radius: 100px;
             font-size: 0.8rem;
             color: #34c759;
+            transition: all 0.3s ease;
         }
         
         .sync-status::before {
@@ -64,6 +64,54 @@
             background: #34c759;
             border-radius: 50%;
             animation: pulse 2s ease-in-out infinite;
+        }
+        
+        .sync-status.syncing {
+            background: rgba(0, 122, 255, 0.15);
+            color: #007aff;
+        }
+        
+        .sync-status.syncing::before {
+            background: #007aff;
+        }
+        
+        .sync-status.waiting {
+            background: rgba(255, 149, 0, 0.15);
+            color: #ff9500;
+        }
+        
+        .sync-status.waiting::before {
+            background: #ff9500;
+        }
+        
+        .refresh-btn {
+            margin-left: auto;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 1px solid var(--border-subtle);
+            background: var(--bg-elevated);
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+        
+        .refresh-btn:hover {
+            background: rgba(201, 255, 87, 0.1);
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+        
+        .refresh-btn.spinning svg {
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
         
         @keyframes pulse {
@@ -101,63 +149,35 @@
         
         .rings-visual {
             position: relative;
-            width: 180px;
-            height: 180px;
+            width: 200px;
+            height: 200px;
         }
         
-        .ring {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            border-radius: 50%;
-            border-width: 12px;
-            border-style: solid;
+        .rings-svg {
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
         }
         
-        .ring-move {
-            width: 180px;
-            height: 180px;
-            border-color: rgba(255, 59, 48, 0.2);
-            border-top-color: #ff3b30;
-            border-right-color: #ff3b30;
-            border-bottom-color: #ff3b30;
-            animation: spin-ring-move 2s ease-out forwards;
+        .ring-bg {
+            fill: none;
+            stroke-linecap: round;
         }
         
-        .ring-exercise {
-            width: 140px;
-            height: 140px;
-            border-color: rgba(52, 199, 89, 0.2);
-            border-top-color: #34c759;
-            border-right-color: #34c759;
-            animation: spin-ring-exercise 2s ease-out forwards;
+        .ring-progress {
+            fill: none;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 1s ease-out;
         }
         
-        .ring-stand {
-            width: 100px;
-            height: 100px;
-            border-color: rgba(0, 199, 190, 0.2);
-            border-top-color: #00c7be;
-            border-right-color: #00c7be;
-            border-bottom-color: #00c7be;
-            animation: spin-ring-stand 2s ease-out forwards;
-        }
+        .ring-move-bg { stroke: rgba(255, 59, 48, 0.2); }
+        .ring-move-progress { stroke: #ff3b30; filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.5)); }
         
-        @keyframes spin-ring-move {
-            from { transform: translate(-50%, -50%) rotate(0deg); }
-            to { transform: translate(-50%, -50%) rotate(280deg); }
-        }
+        .ring-exercise-bg { stroke: rgba(52, 199, 89, 0.2); }
+        .ring-exercise-progress { stroke: #34c759; filter: drop-shadow(0 0 6px rgba(52, 199, 89, 0.5)); }
         
-        @keyframes spin-ring-exercise {
-            from { transform: translate(-50%, -50%) rotate(0deg); }
-            to { transform: translate(-50%, -50%) rotate(200deg); }
-        }
-        
-        @keyframes spin-ring-stand {
-            from { transform: translate(-50%, -50%) rotate(0deg); }
-            to { transform: translate(-50%, -50%) rotate(260deg); }
-        }
+        .ring-stand-bg { stroke: rgba(0, 199, 190, 0.2); }
+        .ring-stand-progress { stroke: #00c7be; filter: drop-shadow(0 0 6px rgba(0, 199, 190, 0.5)); }
         
         .rings-legend {
             flex: 1;
@@ -643,11 +663,18 @@
                 <div class="watch-icon">⌚</div>
                 <div class="health-hero-text">
                     <h2>Apple Watch Connected</h2>
-                    <p>Syncing health data from your Apple Watch Series 9</p>
+                    <p>Syncing health data from your Apple Watch</p>
                 </div>
-                <div class="sync-status">
-                    Live Sync Active
+                <div class="sync-status" id="syncStatus">
+                    Connecting...
                 </div>
+                <button class="refresh-btn" id="refreshBtn" onclick="refreshHealthData()" title="Refresh health data">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M23 4v6h-6"/>
+                        <path d="M1 20v-6h6"/>
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                    </svg>
+                </button>
             </div>
             
             <!-- Activity Rings -->
@@ -658,9 +685,22 @@
                 </div>
                 <div class="activity-rings-content">
                     <div class="rings-visual">
-                        <div class="ring ring-move"></div>
-                        <div class="ring ring-exercise"></div>
-                        <div class="ring ring-stand"></div>
+                        <svg class="rings-svg" viewBox="0 0 200 200">
+                            <!-- Move Ring (outer) - radius 90, circumference = 2 * PI * 90 = 565.48 -->
+                            <circle class="ring-bg ring-move-bg" cx="100" cy="100" r="90" stroke-width="14"/>
+                            <circle class="ring-progress ring-move-progress" id="ring-move" cx="100" cy="100" r="90" stroke-width="14"
+                                stroke-dasharray="565.48" stroke-dashoffset="113"/>
+                            
+                            <!-- Exercise Ring (middle) - radius 70, circumference = 2 * PI * 70 = 439.82 -->
+                            <circle class="ring-bg ring-exercise-bg" cx="100" cy="100" r="70" stroke-width="14"/>
+                            <circle class="ring-progress ring-exercise-progress" id="ring-exercise" cx="100" cy="100" r="70" stroke-width="14"
+                                stroke-dasharray="439.82" stroke-dashoffset="132"/>
+                            
+                            <!-- Stand Ring (inner) - radius 50, circumference = 2 * PI * 50 = 314.16 -->
+                            <circle class="ring-bg ring-stand-bg" cx="100" cy="100" r="50" stroke-width="14"/>
+                            <circle class="ring-progress ring-stand-progress" id="ring-stand" cx="100" cy="100" r="50" stroke-width="14"
+                                stroke-dasharray="314.16" stroke-dashoffset="78"/>
+                        </svg>
                     </div>
                     <div class="rings-legend">
                         <div class="ring-stat">
@@ -971,7 +1011,9 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/js/firebase-config.js"></script>
+    <script src="/js/health.js"></script>
     <script>
         // Load user info
         document.addEventListener('DOMContentLoaded', () => {
@@ -987,19 +1029,70 @@
             }
         });
         
-        // Trend tab switching
-        document.querySelectorAll('.trend-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.trend-tab').forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                
-                // Animate bars with random heights for demo
-                document.querySelectorAll('.trend-bar').forEach(bar => {
-                    const randomHeight = Math.floor(Math.random() * 60) + 40;
-                    bar.style.height = randomHeight + '%';
-                });
-            });
+        // Redirect to login if not authenticated
+        window.addEventListener('authStateChanged', (e) => {
+            if (!e.detail) {
+                window.location.href = '/login.html';
+            }
         });
+        
+        // Refresh health data function - triggers iOS app to sync
+        async function refreshHealthData() {
+            const btn = document.getElementById('refreshBtn');
+            const status = document.getElementById('syncStatus');
+            
+            // Add spinning animation
+            btn.classList.add('spinning');
+            status.textContent = 'Requesting sync...';
+            status.className = 'sync-status syncing';
+            
+            try {
+                const user = firebase.auth().currentUser;
+                if (!user) {
+                    throw new Error('Not logged in');
+                }
+                
+                // Write a sync request to Firebase - the iOS app will pick this up
+                await db.collection('users').doc(user.uid).set({
+                    syncRequest: {
+                        requestedAt: firebase.firestore.FieldValue.serverTimestamp(),
+                        source: 'web'
+                    }
+                }, { merge: true });
+                
+                console.log('📤 Sync request sent to iOS app');
+                status.textContent = 'Sync requested...';
+                
+                // Wait a few seconds for the iOS app to respond
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
+                // Refresh weekly data
+                if (typeof healthDashboard !== 'undefined' && healthDashboard) {
+                    healthDashboard.fetchWeeklyData();
+                }
+                
+                btn.classList.remove('spinning');
+                if (healthDashboard && healthDashboard.healthData) {
+                    status.textContent = 'Updated just now';
+                    status.className = 'sync-status';
+                } else {
+                    status.textContent = 'Open app to sync';
+                    status.className = 'sync-status waiting';
+                }
+            } catch (error) {
+                console.error('Sync request failed:', error);
+                btn.classList.remove('spinning');
+                status.textContent = 'Sync failed';
+                status.className = 'sync-status waiting';
+            }
+        }
+        
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            if (typeof healthDashboard !== 'undefined' && healthDashboard) {
+                healthDashboard.fetchWeeklyData();
+            }
+        }, 30000);
     </script>
 </body>
 </html>

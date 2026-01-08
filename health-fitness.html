@@ -971,7 +971,9 @@
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/js/firebase-config.js"></script>
+    <script src="/js/health.js"></script>
     <script>
         // Load user info
         document.addEventListener('DOMContentLoaded', () => {
@@ -987,18 +989,12 @@
             }
         });
         
-        // Trend tab switching
-        document.querySelectorAll('.trend-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.trend-tab').forEach(t => t.classList.remove('active'));
-                tab.classList.add('active');
-                
-                // Animate bars with random heights for demo
-                document.querySelectorAll('.trend-bar').forEach(bar => {
-                    const randomHeight = Math.floor(Math.random() * 60) + 40;
-                    bar.style.height = randomHeight + '%';
-                });
-            });
+        // Redirect to login if not authenticated
+        window.addEventListener('authStateChanged', (e) => {
+            if (!e.detail) {
+                // User not logged in - redirect to login
+                window.location.href = '/login.html';
+            }
         });
     </script>
 </body>
