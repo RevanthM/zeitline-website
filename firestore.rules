@@ -79,6 +79,11 @@ service cloud.firestore {
       match /workouts/{workoutId} {
         allow read, write: if isOwner(userId);
       }
+      
+      // User's recordings subcollection (from Apple Watch)
+      match /recordings/{recordingId} {
+        allow read, write: if isOwner(userId);
+      }
     }
     
     // OAuth states collection (temporary, for OAuth flow)

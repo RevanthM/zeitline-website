@@ -302,27 +302,16 @@ class RecordingsManager {
             if (noTranscript) noTranscript.style.display = 'block';
         }
         
-        // Load audio if available
-        if (recording.audioUrl) {
-            this.audioPlayer.src = recording.audioUrl;
-            this.audioPlayer.load();
-        } else {
-            // For demo, we'll just update the duration
-            document.getElementById('totalTime').textContent = this.formatTime(recording.duration);
+        // Update duration display
+        const totalTimeEl = document.getElementById('totalTime');
+        if (totalTimeEl) {
+            totalTimeEl.textContent = this.formatDuration(recording.duration);
         }
-        
-        // Update progress bar
-        document.getElementById('progressBar').style.width = '0%';
-        document.getElementById('currentTime').textContent = '0:00';
         
         // Highlight selected card
         document.querySelectorAll('.recording-card').forEach(card => {
             card.classList.toggle('active', card.dataset.id === recording.id);
         });
-        
-        // Reset play state
-        this.isPlaying = false;
-        this.updatePlayButton();
     }
     
     togglePlay() {
