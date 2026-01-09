@@ -696,7 +696,6 @@ document.addEventListener('DOMContentLoaded', () => {
 class TaskExtractionManager {
     constructor(recordingsManager) {
         this.recordingsManager = recordingsManager;
-        this.apiKey = localStorage.getItem('openai_api_key') || '';
         this.setupEventListeners();
     }
     
@@ -719,19 +718,12 @@ class TaskExtractionManager {
             return;
         }
         
-        // Check for API key
-        if (!this.apiKey) {
-            this.showAPIKeyModal();
-            return;
-        }
-        
         const extractBtn = document.getElementById('extractTasksBtn');
         extractBtn.disabled = true;
         extractBtn.textContent = 'Extracting...';
         
         try {
-            const result = await this.callOpenAI(recording.transcript, recording.id);
-            await this.saveResults(recording.id, result);
+            const result = await this.callBackendAPI(recording.transcript, recording.id);
             this.displayResults(result);
             this.recordingsManager.showToast(`Extracted ${result.userTasks.length} tasks and ${result.conversationPoints.length} discussion points!`, 'success');
         } catch (error) {
@@ -743,130 +735,41 @@ class TaskExtractionManager {
         }
     }
     
-    async callOpenAI(transcript, recordingId) {
-        const prompt = `You are an AI assistant that analyzes conversation transcripts. Extract:
-1. ALL discussion points (meetings, decisions, tasks mentioned, ideas, etc.)
-2. USER's actionable tasks only (things the user needs to do)
-
-For each item, provide:
-- content: Brief description
-- type: user_task, other_person_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
-- speaker: Who said it (if identifiable)
-- mentionedPeople: Array of people mentioned
-- mentionedDateTime: ISO date if mentioned, null otherwise
-- location: Location if mentioned, null otherwise
-
-Return ONLY valid JSON:
-{
-  "conversation_points": [
-    {"content": "...", "type": "meeting", "speaker": "John", "mentionedPeople": ["Sarah"], "mentionedDateTime": null, "location": "Office"}
-  ],
-  "user_tasks": [
-    {"title": "...", "details": "...", "location": null, "participants": [], "suggestedDateTime": null, "priority": 2, "category": "work"}
-  ]
-}
-
-Transcript:
-${transcript}`;
-
-        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    async callBackendAPI(transcript, recordingId) {
+        // Get the current user's auth token
+        const user = firebase.auth().currentUser;
+        if (!user) {
+            throw new Error('Please sign in to extract tasks');
+        }
+        
+        const token = await user.getIdToken();
+        
+        // Call our secure backend API
+        const response = await fetch('/api/task-extraction/extract', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${this.apiKey}`
+                'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-                model: 'gpt-4o',
-                messages: [
-                    { role: 'system', content: 'You extract tasks and discussion points from transcripts. Return only valid JSON.' },
-                    { role: 'user', content: prompt }
-                ],
-                temperature: 0.3,
-                max_tokens: 2000,
-                response_format: { type: 'json_object' }
+                transcript,
+                recordingId
             })
         });
         
         if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.error?.message || 'API request failed');
+            throw new Error(error.error || 'Extraction failed');
         }
         
         const data = await response.json();
-        const content = data.choices[0].message.content;
-        const parsed = JSON.parse(content);
         
         return {
-            conversationPoints: parsed.conversation_points || [],
-            userTasks: parsed.user_tasks || [],
+            conversationPoints: data.conversationPoints || [],
+            userTasks: data.userTasks || [],
             recordingId: recordingId,
-            extractedAt: new Date().toISOString()
+            extractedAt: data.extractedAt
         };
-    }
-    
-    async saveResults(recordingId, result) {
-        const db = firebase.firestore();
-        const userId = firebase.auth().currentUser?.uid;
-        if (!userId) return;
-        
-        // Save conversation points
-        for (const point of result.conversationPoints) {
-            const pointData = {
-                ...point,
-                recordingId,
-                sessionId: recordingId,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                addedToTaskList: point.type === 'user_task'
-            };
-            
-            await db.collection('users').doc(userId)
-                .collection('conversationSessions').doc(recordingId)
-                .collection('points').add(pointData);
-        }
-        
-        // Save user tasks to master task list
-        const taskListRef = db.collection('users').doc(userId)
-            .collection('taskLists').doc('master');
-        
-        const taskListDoc = await taskListRef.get();
-        let existingTasks = [];
-        if (taskListDoc.exists) {
-            existingTasks = taskListDoc.data().tasks || [];
-        }
-        
-        const newTasks = result.userTasks.map(task => ({
-            id: this.generateId(),
-            title: task.title,
-            details: task.details || null,
-            location: task.location || null,
-            participants: task.participants || [],
-            subtasks: [],
-            suggestedDate: task.suggestedDateTime ? new Date(task.suggestedDateTime) : null,
-            priority: task.priority || null,
-            category: task.category || 'other',
-            audioTimecode: 0,
-            sessionId: recordingId,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            addedToCalendar: false,
-            status: 'pending'
-        }));
-        
-        await taskListRef.set({
-            userId,
-            tasks: [...existingTasks, ...newTasks],
-            lastUpdated: new Date().toISOString()
-        }, { merge: true });
-        
-        // Update the recording document with extraction info
-        await db.collection('users').doc(userId)
-            .collection('recordings').doc(recordingId)
-            .update({
-                tasksExtracted: true,
-                extractedTaskCount: result.userTasks.length,
-                extractedPointCount: result.conversationPoints.length,
-                extractedAt: firebase.firestore.FieldValue.serverTimestamp()
-            });
     }
     
     displayResults(result) {
@@ -932,39 +835,6 @@ ${transcript}`;
                 </div>
             </div>
         `;
-    }
-    
-    showAPIKeyModal() {
-        const modal = document.createElement('div');
-        modal.className = 'modal-overlay';
-        modal.innerHTML = `
-            <div class="modal-content">
-                <h3>🔑 OpenAI API Key Required</h3>
-                <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
-                    Enter your OpenAI API key to enable AI task extraction.
-                </p>
-                <input type="password" id="apiKeyInput" placeholder="sk-..." />
-                <div class="modal-actions">
-                    <button class="cancel-btn" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
-                    <button class="save-btn" onclick="window.taskExtractor.saveAPIKey()">Save & Extract</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(modal);
-    }
-    
-    saveAPIKey() {
-        const input = document.getElementById('apiKeyInput');
-        if (input && input.value) {
-            this.apiKey = input.value;
-            localStorage.setItem('openai_api_key', this.apiKey);
-            document.querySelector('.modal-overlay')?.remove();
-            this.extractTasks();
-        }
-    }
-    
-    generateId() {
-        return 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
     
     addToCalendar(taskTitle) {
