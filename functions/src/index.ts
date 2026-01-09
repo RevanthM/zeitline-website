@@ -88,6 +88,7 @@ import calendarsRouter from "./calendars";
 import aiAssistantRouter from "./ai-assistant";
 import nutritionRouter from "./nutrition";
 import onboardingChatRouter from "./onboarding-chat";
+import recordingsRouter from "./recordings";
 
 // Create Express app
 const app = express();
@@ -151,6 +152,7 @@ app.use("/calendars", calendarsRouter);
 app.use("/ai-assistant", aiAssistantRouter);
 app.use("/nutrition", nutritionRouter);
 app.use("/onboarding", onboardingChatRouter);
+app.use("/recordings", recordingsRouter);
 
 // Also mount under /api for Firebase hosting rewrites
 app.use("/api/users", usersRouter);
@@ -159,6 +161,7 @@ app.use("/api/calendars", calendarsRouter);
 app.use("/api/ai-assistant", aiAssistantRouter);
 app.use("/api/nutrition", nutritionRouter);
 app.use("/api/onboarding", onboardingChatRouter);
+app.use("/api/recordings", recordingsRouter);
 
 // Error handling middleware - must be before 404 handler
 // Note: Express error handlers must have 4 parameters
