@@ -146,11 +146,22 @@ class RecordingsManager {
                     .orderBy('recordedAt', 'desc')
                     .get();
                 
-                this.recordings = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                    recordedAt: doc.data().recordedAt?.toDate() || new Date()
-                }));
+                this.recordings = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    console.log('Recording loaded:', {
+                        id: doc.id,
+                        filename: data.filename,
+                        hasAudioUrl: !!data.audioUrl,
+                        audioUrl: data.audioUrl ? data.audioUrl.substring(0, 50) + '...' : 'null'
+                    });
+                    return {
+                        id: doc.id,
+                        ...data,
+                        recordedAt: data.recordedAt?.toDate() || new Date()
+                    };
+                });
+                
+                console.log(`Loaded ${this.recordings.length} recordings`);
             }
             
             // Hide loading, show content
@@ -302,11 +313,73 @@ class RecordingsManager {
             if (noTranscript) noTranscript.style.display = 'block';
         }
         
+        // Load audio from Firebase Storage if URL is available
+        if (recording.audioUrl) {
+            console.log('Loading audio from:', recording.audioUrl);
+            
+            // Firebase Storage download URLs should work directly without CORS issues
+            // since they include an access token
+            this.audioPlayer.src = recording.audioUrl;
+            
+            // Add comprehensive event handlers for debugging
+            this.audioPlayer.oncanplay = () => {
+                console.log('Audio can play - ready for playback');
+            };
+            
+            this.audioPlayer.onloadeddata = () => {
+                console.log('Audio data loaded successfully');
+            };
+            
+            this.audioPlayer.onerror = (e) => {
+                const error = this.audioPlayer.error;
+                console.error('Error loading audio:', {
+                    code: error?.code,
+                    message: error?.message,
+                    networkState: this.audioPlayer.networkState,
+                    readyState: this.audioPlayer.readyState,
+                    src: this.audioPlayer.src
+                });
+                
+                // Provide more specific error messages
+                let errorMsg = 'Unable to load audio file';
+                if (error) {
+                    switch (error.code) {
+                        case 1: errorMsg = 'Audio loading aborted'; break;
+                        case 2: errorMsg = 'Network error loading audio'; break;
+                        case 3: errorMsg = 'Audio decoding failed'; break;
+                        case 4: errorMsg = 'Audio format not supported'; break;
+                    }
+                }
+                this.showToast(errorMsg, 'error');
+            };
+            
+            this.audioPlayer.load();
+        } else {
+            // No audio URL - will use simulated playback
+            console.log('No audio URL available for this recording. Recording data:', {
+                id: recording.id,
+                filename: recording.filename,
+                hasAudioUrl: !!recording.audioUrl
+            });
+            this.audioPlayer.src = '';
+        }
+        
         // Update duration display
         const totalTimeEl = document.getElementById('totalTime');
         if (totalTimeEl) {
             totalTimeEl.textContent = this.formatDuration(recording.duration);
         }
+        
+        // Reset progress bar
+        const progressBar = document.getElementById('progressBar');
+        if (progressBar) progressBar.style.width = '0%';
+        
+        const currentTimeEl = document.getElementById('currentTime');
+        if (currentTimeEl) currentTimeEl.textContent = '0:00';
+        
+        // Reset play state
+        this.isPlaying = false;
+        this.updatePlayButton();
         
         // Highlight selected card
         document.querySelectorAll('.recording-card').forEach(card => {
@@ -314,17 +387,60 @@ class RecordingsManager {
         });
     }
     
-    togglePlay() {
+    async togglePlay() {
         if (!this.currentRecording) return;
         
         if (this.isPlaying) {
             this.audioPlayer.pause();
+            if (this.playbackInterval) {
+                clearInterval(this.playbackInterval);
+            }
         } else {
-            // For demo without actual audio files
-            if (!this.audioPlayer.src || this.audioPlayer.src === window.location.href) {
-                this.simulatePlayback();
+            // Check if we have an actual audio source
+            let hasAudioSource = this.audioPlayer.src && 
+                                 this.audioPlayer.src !== window.location.href && 
+                                 this.audioPlayer.src !== '';
+            
+            // If no audio URL stored, try to get it from Firebase Storage directly
+            if (!hasAudioSource && this.currentRecording.filename) {
+                try {
+                    console.log('Attempting to get audio URL from Firebase Storage...');
+                    const userId = firebase.auth().currentUser?.uid;
+                    if (userId) {
+                        const storage = firebase.storage();
+                        const audioRef = storage.ref(`recordings/${userId}/${this.currentRecording.filename}`);
+                        const url = await audioRef.getDownloadURL();
+                        console.log('Got audio URL from Storage:', url);
+                        
+                        this.audioPlayer.src = url;
+                        this.audioPlayer.load();
+                        hasAudioSource = true;
+                        
+                        // Also update the recording object for future use
+                        this.currentRecording.audioUrl = url;
+                    }
+                } catch (storageError) {
+                    console.error('Could not get audio from Storage:', storageError);
+                    this.showToast('Audio file not found. Please sync from iPhone app.', 'error');
+                }
+            }
+            
+            if (hasAudioSource) {
+                // Try to play actual audio
+                this.audioPlayer.play()
+                    .then(() => {
+                        console.log('Audio playback started');
+                    })
+                    .catch((error) => {
+                        console.error('Error playing audio:', error);
+                        // Fallback to simulated playback if real audio fails
+                        this.showToast('Audio playback failed, showing progress simulation', 'warning');
+                        this.simulatePlayback();
+                    });
             } else {
-                this.audioPlayer.play();
+                // No audio URL - use simulated playback
+                console.log('No audio source available, using simulated playback');
+                this.simulatePlayback();
             }
         }
     }
@@ -571,5 +687,297 @@ class RecordingsManager {
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     window.recordingsManager = new RecordingsManager();
+});
+
+// ============================================
+// AI Task Extraction Manager
+// ============================================
+
+class TaskExtractionManager {
+    constructor(recordingsManager) {
+        this.recordingsManager = recordingsManager;
+        this.apiKey = localStorage.getItem('openai_api_key') || '';
+        this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+        const extractBtn = document.getElementById('extractTasksBtn');
+        if (extractBtn) {
+            extractBtn.addEventListener('click', () => this.extractTasks());
+        }
+    }
+    
+    async extractTasks() {
+        const recording = this.recordingsManager.currentRecording;
+        if (!recording) {
+            this.recordingsManager.showToast('Please select a recording first', 'warning');
+            return;
+        }
+        
+        if (!recording.transcript) {
+            this.recordingsManager.showToast('No transcript available. Please transcribe first.', 'warning');
+            return;
+        }
+        
+        // Check for API key
+        if (!this.apiKey) {
+            this.showAPIKeyModal();
+            return;
+        }
+        
+        const extractBtn = document.getElementById('extractTasksBtn');
+        extractBtn.disabled = true;
+        extractBtn.textContent = 'Extracting...';
+        
+        try {
+            const result = await this.callOpenAI(recording.transcript, recording.id);
+            await this.saveResults(recording.id, result);
+            this.displayResults(result);
+            this.recordingsManager.showToast(`Extracted ${result.userTasks.length} tasks and ${result.conversationPoints.length} discussion points!`, 'success');
+        } catch (error) {
+            console.error('Task extraction failed:', error);
+            this.recordingsManager.showToast('Task extraction failed: ' + error.message, 'error');
+        } finally {
+            extractBtn.disabled = false;
+            extractBtn.textContent = 'Extract Tasks';
+        }
+    }
+    
+    async callOpenAI(transcript, recordingId) {
+        const prompt = `You are an AI assistant that analyzes conversation transcripts. Extract:
+1. ALL discussion points (meetings, decisions, tasks mentioned, ideas, etc.)
+2. USER's actionable tasks only (things the user needs to do)
+
+For each item, provide:
+- content: Brief description
+- type: user_task, other_person_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
+- speaker: Who said it (if identifiable)
+- mentionedPeople: Array of people mentioned
+- mentionedDateTime: ISO date if mentioned, null otherwise
+- location: Location if mentioned, null otherwise
+
+Return ONLY valid JSON:
+{
+  "conversation_points": [
+    {"content": "...", "type": "meeting", "speaker": "John", "mentionedPeople": ["Sarah"], "mentionedDateTime": null, "location": "Office"}
+  ],
+  "user_tasks": [
+    {"title": "...", "details": "...", "location": null, "participants": [], "suggestedDateTime": null, "priority": 2, "category": "work"}
+  ]
+}
+
+Transcript:
+${transcript}`;
+
+        const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.apiKey}`
+            },
+            body: JSON.stringify({
+                model: 'gpt-4o',
+                messages: [
+                    { role: 'system', content: 'You extract tasks and discussion points from transcripts. Return only valid JSON.' },
+                    { role: 'user', content: prompt }
+                ],
+                temperature: 0.3,
+                max_tokens: 2000,
+                response_format: { type: 'json_object' }
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error?.message || 'API request failed');
+        }
+        
+        const data = await response.json();
+        const content = data.choices[0].message.content;
+        const parsed = JSON.parse(content);
+        
+        return {
+            conversationPoints: parsed.conversation_points || [],
+            userTasks: parsed.user_tasks || [],
+            recordingId: recordingId,
+            extractedAt: new Date().toISOString()
+        };
+    }
+    
+    async saveResults(recordingId, result) {
+        const db = firebase.firestore();
+        const userId = firebase.auth().currentUser?.uid;
+        if (!userId) return;
+        
+        // Save conversation points
+        for (const point of result.conversationPoints) {
+            const pointData = {
+                ...point,
+                recordingId,
+                sessionId: recordingId,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                addedToTaskList: point.type === 'user_task'
+            };
+            
+            await db.collection('users').doc(userId)
+                .collection('conversationSessions').doc(recordingId)
+                .collection('points').add(pointData);
+        }
+        
+        // Save user tasks to master task list
+        const taskListRef = db.collection('users').doc(userId)
+            .collection('taskLists').doc('master');
+        
+        const taskListDoc = await taskListRef.get();
+        let existingTasks = [];
+        if (taskListDoc.exists) {
+            existingTasks = taskListDoc.data().tasks || [];
+        }
+        
+        const newTasks = result.userTasks.map(task => ({
+            id: this.generateId(),
+            title: task.title,
+            details: task.details || null,
+            location: task.location || null,
+            participants: task.participants || [],
+            subtasks: [],
+            suggestedDate: task.suggestedDateTime ? new Date(task.suggestedDateTime) : null,
+            priority: task.priority || null,
+            category: task.category || 'other',
+            audioTimecode: 0,
+            sessionId: recordingId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            addedToCalendar: false,
+            status: 'pending'
+        }));
+        
+        await taskListRef.set({
+            userId,
+            tasks: [...existingTasks, ...newTasks],
+            lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        
+        // Update the recording document with extraction info
+        await db.collection('users').doc(userId)
+            .collection('recordings').doc(recordingId)
+            .update({
+                tasksExtracted: true,
+                extractedTaskCount: result.userTasks.length,
+                extractedPointCount: result.conversationPoints.length,
+                extractedAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+    }
+    
+    displayResults(result) {
+        // Display extracted tasks
+        const tasksList = document.getElementById('extractedTasksList');
+        const noTasks = document.getElementById('noTasks');
+        
+        if (result.userTasks.length > 0) {
+            noTasks.style.display = 'none';
+            tasksList.style.display = 'block';
+            tasksList.innerHTML = result.userTasks.map(task => this.createTaskHTML(task)).join('');
+        } else {
+            noTasks.innerHTML = '<p style="text-align: center; color: var(--text-muted);">No actionable tasks found in this recording</p>';
+        }
+        
+        // Display conversation points
+        const pointsList = document.getElementById('conversationPointsList');
+        const noPoints = document.getElementById('noPoints');
+        
+        if (result.conversationPoints.length > 0) {
+            noPoints.style.display = 'none';
+            pointsList.style.display = 'block';
+            pointsList.innerHTML = result.conversationPoints.map(point => this.createPointHTML(point)).join('');
+        }
+    }
+    
+    createTaskHTML(task) {
+        const categoryIcons = {
+            meeting: '👥', call: '📞', deadline: '⏰', reminder: '🔔',
+            errand: '🛒', work: '💼', personal: '👤', health: '❤️',
+            travel: '✈️', other: '📋'
+        };
+        const icon = categoryIcons[task.category] || '📋';
+        
+        return `
+            <div class="task-item">
+                <div class="task-icon">${icon}</div>
+                <div class="task-content">
+                    <div class="task-title">${task.title}</div>
+                    <div class="task-meta">
+                        ${task.suggestedDateTime ? `<span>📅 ${new Date(task.suggestedDateTime).toLocaleDateString()}</span>` : ''}
+                        ${task.location ? `<span>📍 ${task.location}</span>` : ''}
+                        ${task.participants?.length ? `<span>👥 ${task.participants.length}</span>` : ''}
+                    </div>
+                </div>
+                <div class="task-actions">
+                    <button class="task-action-btn add-to-list" onclick="window.taskExtractor.addToCalendar('${task.title}')">
+                        + Calendar
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    createPointHTML(point) {
+        const typeClass = point.type.replace('_', '-');
+        return `
+            <div class="point-item">
+                <span class="point-type-badge ${typeClass}">${point.type.replace('_', ' ')}</span>
+                <div class="point-content">
+                    ${point.content}
+                    ${point.speaker ? `<span style="opacity: 0.6;"> — ${point.speaker}</span>` : ''}
+                </div>
+            </div>
+        `;
+    }
+    
+    showAPIKeyModal() {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content">
+                <h3>🔑 OpenAI API Key Required</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
+                    Enter your OpenAI API key to enable AI task extraction.
+                </p>
+                <input type="password" id="apiKeyInput" placeholder="sk-..." />
+                <div class="modal-actions">
+                    <button class="cancel-btn" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+                    <button class="save-btn" onclick="window.taskExtractor.saveAPIKey()">Save & Extract</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+    }
+    
+    saveAPIKey() {
+        const input = document.getElementById('apiKeyInput');
+        if (input && input.value) {
+            this.apiKey = input.value;
+            localStorage.setItem('openai_api_key', this.apiKey);
+            document.querySelector('.modal-overlay')?.remove();
+            this.extractTasks();
+        }
+    }
+    
+    generateId() {
+        return 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+    
+    addToCalendar(taskTitle) {
+        // Open Google Calendar with prefilled event
+        const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(taskTitle)}`;
+        window.open(calUrl, '_blank');
+    }
+}
+
+// Initialize task extractor after recordings manager
+document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+        window.taskExtractor = new TaskExtractionManager(window.recordingsManager);
+    }, 100);
 });
 
