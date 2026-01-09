@@ -270,7 +270,289 @@ export const onUserDelete = functions.auth.user().onDelete(async (user) => {
   }
 });
 
+// Firestore trigger - auto-extract tasks when a new recording is created
+export const onRecordingCreate = functions.firestore
+  .document("users/{userId}/recordings/{recordingId}")
+  .onCreate(async (snapshot, context) => {
+    const { userId, recordingId } = context.params;
+    const recordingData = snapshot.data();
+    
+    console.log(`New recording created: ${recordingId} for user ${userId}`);
+    
+    // Check if recording has a transcript
+    const transcript = recordingData.transcript;
+    if (!transcript || transcript.trim().length === 0) {
+      console.log("No transcript available, skipping auto-extraction");
+      return;
+    }
+    
+    // Check if already extracted
+    if (recordingData.tasksExtracted) {
+      console.log("Tasks already extracted, skipping");
+      return;
+    }
+    
+    console.log(`Auto-extracting tasks from recording ${recordingId}...`);
+    
+    try {
+      const { OpenAI } = await import("openai");
+      
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        console.error("OpenAI API key not configured");
+        return;
+      }
+      
+      const openai = new OpenAI({ apiKey });
+      
+      const prompt = `You are an AI assistant that analyzes conversation transcripts. Extract:
+1. ALL discussion points (meetings, decisions, tasks mentioned, ideas, etc.)
+2. USER's actionable tasks only (things the user needs to do)
 
+For each item, provide:
+- content: Brief description
+- type: user_task, other_person_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
+- speaker: Who said it (if identifiable)
+- mentionedPeople: Array of people mentioned
+- mentionedDateTime: ISO date if mentioned, null otherwise
+- location: Location if mentioned, null otherwise
 
+Return ONLY valid JSON:
+{
+  "conversation_points": [
+    {"content": "...", "type": "meeting", "speaker": "John", "mentionedPeople": ["Sarah"], "mentionedDateTime": null, "location": "Office"}
+  ],
+  "user_tasks": [
+    {"title": "...", "details": "...", "location": null, "participants": [], "suggestedDateTime": null, "priority": 2, "category": "work"}
+  ]
+}
 
+Transcript:
+${transcript}`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: "You extract tasks and discussion points from transcripts. Return only valid JSON." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+        response_format: { type: "json_object" }
+      });
+
+      const content = completion.choices[0].message.content || "{}";
+      const parsed = JSON.parse(content);
+      
+      const conversationPoints = parsed.conversation_points || [];
+      const userTasks = parsed.user_tasks || [];
+      
+      console.log(`Extracted ${conversationPoints.length} points and ${userTasks.length} tasks`);
+      
+      const db = admin.firestore();
+      const batch = db.batch();
+      
+      // Save conversation points to session
+      const sessionRef = db.collection(`users/${userId}/conversationSessions`).doc(recordingId);
+      const points = conversationPoints.map((point: any, index: number) => ({
+        id: `point_${Date.now()}_${index}`,
+        ...point,
+        recordingId,
+        sessionId: recordingId,
+        createdAt: new Date().toISOString(),
+        addedToTaskList: point.type === "user_task"
+      }));
+      
+      batch.set(sessionRef, {
+        recordingId,
+        points,
+        startedAt: admin.firestore.FieldValue.serverTimestamp(),
+        endedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+      
+      // Save user tasks to master task list
+      const taskListRef = db.collection(`users/${userId}/taskLists`).doc("master");
+      const taskListDoc = await taskListRef.get();
+      
+      let existingTasks: any[] = [];
+      if (taskListDoc.exists) {
+        existingTasks = taskListDoc.data()?.tasks || [];
+      }
+      
+      const newTasks = userTasks.map((task: any, index: number) => ({
+        id: `task_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}`,
+        title: task.title,
+        details: task.details || null,
+        location: task.location || null,
+        participants: task.participants || [],
+        subtasks: [],
+        suggestedDate: task.suggestedDateTime || null,
+        priority: task.priority || null,
+        category: task.category || "other",
+        audioTimecode: 0,
+        sessionId: recordingId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        addedToCalendar: false,
+        status: "pending"
+      }));
+      
+      batch.set(taskListRef, {
+        userId,
+        tasks: [...existingTasks, ...newTasks],
+        lastUpdated: new Date().toISOString()
+      }, { merge: true });
+      
+      // Update recording document
+      batch.update(snapshot.ref, {
+        tasksExtracted: true,
+        extractedTaskCount: userTasks.length,
+        extractedPointCount: conversationPoints.length,
+        extractedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+      
+      await batch.commit();
+      
+      console.log(`✅ Auto-extracted ${userTasks.length} tasks and ${conversationPoints.length} points for recording ${recordingId}`);
+      
+    } catch (error) {
+      console.error("Error auto-extracting tasks:", error);
+    }
+  });
+
+// Also trigger when recording is updated (e.g., transcript added later)
+export const onRecordingUpdate = functions.firestore
+  .document("users/{userId}/recordings/{recordingId}")
+  .onUpdate(async (change, context) => {
+    const { userId, recordingId } = context.params;
+    const before = change.before.data();
+    const after = change.after.data();
+    
+    // Check if transcript was just added (wasn't there before, is there now)
+    const hadTranscript = before.transcript && before.transcript.trim().length > 0;
+    const hasTranscript = after.transcript && after.transcript.trim().length > 0;
+    
+    if (!hadTranscript && hasTranscript && !after.tasksExtracted) {
+      console.log(`Transcript added to recording ${recordingId}, triggering auto-extraction...`);
+      
+      // Trigger the same extraction logic
+      // We'll call the onCreate handler logic by creating a fake snapshot
+      const snapshot = change.after;
+      
+      try {
+        const { OpenAI } = await import("openai");
+        
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+          console.error("OpenAI API key not configured");
+          return;
+        }
+        
+        const openai = new OpenAI({ apiKey });
+        const transcript = after.transcript;
+        
+        const prompt = `You are an AI assistant that analyzes conversation transcripts. Extract:
+1. ALL discussion points (meetings, decisions, tasks mentioned, ideas, etc.)
+2. USER's actionable tasks only (things the user needs to do)
+
+Return ONLY valid JSON:
+{
+  "conversation_points": [
+    {"content": "...", "type": "meeting|user_task|other_person_task|event|deadline|reminder|decision|question|follow_up|information|idea|other", "speaker": null, "mentionedPeople": [], "mentionedDateTime": null, "location": null}
+  ],
+  "user_tasks": [
+    {"title": "...", "details": null, "location": null, "participants": [], "suggestedDateTime": null, "priority": null, "category": "work"}
+  ]
+}
+
+Transcript:
+${transcript}`;
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [
+            { role: "system", content: "You extract tasks and discussion points from transcripts. Return only valid JSON." },
+            { role: "user", content: prompt }
+          ],
+          temperature: 0.3,
+          max_tokens: 2000,
+          response_format: { type: "json_object" }
+        });
+
+        const content = completion.choices[0].message.content || "{}";
+        const parsed = JSON.parse(content);
+        
+        const conversationPoints = parsed.conversation_points || [];
+        const userTasks = parsed.user_tasks || [];
+        
+        const db = admin.firestore();
+        const batch = db.batch();
+        
+        // Save conversation points
+        const sessionRef = db.collection(`users/${userId}/conversationSessions`).doc(recordingId);
+        const points = conversationPoints.map((point: any, index: number) => ({
+          id: `point_${Date.now()}_${index}`,
+          ...point,
+          recordingId,
+          sessionId: recordingId,
+          createdAt: new Date().toISOString(),
+          addedToTaskList: point.type === "user_task"
+        }));
+        
+        batch.set(sessionRef, {
+          recordingId,
+          points,
+          startedAt: admin.firestore.FieldValue.serverTimestamp(),
+          endedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        
+        // Save user tasks
+        const taskListRef = db.collection(`users/${userId}/taskLists`).doc("master");
+        const taskListDoc = await taskListRef.get();
+        
+        let existingTasks: any[] = [];
+        if (taskListDoc.exists) {
+          existingTasks = taskListDoc.data()?.tasks || [];
+        }
+        
+        const newTasks = userTasks.map((task: any, index: number) => ({
+          id: `task_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}`,
+          title: task.title,
+          details: task.details || null,
+          location: task.location || null,
+          participants: task.participants || [],
+          subtasks: [],
+          suggestedDate: task.suggestedDateTime || null,
+          priority: task.priority || null,
+          category: task.category || "other",
+          sessionId: recordingId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          addedToCalendar: false,
+          status: "pending"
+        }));
+        
+        batch.set(taskListRef, {
+          userId,
+          tasks: [...existingTasks, ...newTasks],
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        
+        // Update recording
+        batch.update(snapshot.ref, {
+          tasksExtracted: true,
+          extractedTaskCount: userTasks.length,
+          extractedPointCount: conversationPoints.length,
+          extractedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        
+        await batch.commit();
+        
+        console.log(`✅ Auto-extracted ${userTasks.length} tasks from updated recording ${recordingId}`);
+        
+      } catch (error) {
+        console.error("Error auto-extracting tasks on update:", error);
+      }
+    }
+  });
 
