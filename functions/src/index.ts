@@ -91,6 +91,74 @@ import onboardingChatRouter from "./onboarding-chat";
 import recordingsRouter from "./recordings";
 import taskExtractionRouter from "./task-extraction";
 
+// Import for file system operations
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+
+/**
+ * Helper function to transcribe audio with Whisper API (for use in Firestore triggers)
+ */
+async function transcribeWithWhisperFromTrigger(audioUrl: string, filename: string): Promise<string> {
+  const { OpenAI } = await import("openai");
+  
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OpenAI API key not configured");
+  }
+  
+  console.log(`🎤 Downloading audio for Whisper transcription: ${filename}`);
+  
+  // Download the audio file
+  const tempDir = os.tmpdir();
+  const ext = path.extname(filename) || ".m4a";
+  const tempFilePath = path.join(tempDir, `audio_${Date.now()}${ext}`);
+  
+  const response = await fetch(audioUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download audio: ${response.status}`);
+  }
+  
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  fs.writeFileSync(tempFilePath, buffer);
+  
+  const stats = fs.statSync(tempFilePath);
+  console.log(`Downloaded ${stats.size} bytes to ${tempFilePath}`);
+  
+  if (stats.size === 0) {
+    fs.unlinkSync(tempFilePath);
+    throw new Error("Audio file is empty");
+  }
+  
+  // Transcribe with Whisper
+  const openai = new OpenAI({ apiKey });
+  const fileStream = fs.createReadStream(tempFilePath);
+  
+  try {
+    const transcription = await openai.audio.transcriptions.create({
+      file: fileStream,
+      model: "whisper-1",
+      language: "en",
+      response_format: "text",
+      prompt: "This is a voice memo or conversation recording. It may contain names, dates, tasks, meetings, and personal notes.",
+    });
+    
+    // Clean up temp file
+    fs.unlinkSync(tempFilePath);
+    
+    return typeof transcription === "string" ? transcription : (transcription as any).text || "";
+  } catch (error: any) {
+    // Clean up temp file on error
+    try {
+      fs.unlinkSync(tempFilePath);
+    } catch (e) {
+      // Ignore cleanup errors
+    }
+    throw error;
+  }
+}
+
 // Create Express app
 const app = express();
 
@@ -270,19 +338,65 @@ export const onUserDelete = functions.auth.user().onDelete(async (user) => {
   }
 });
 
-// Firestore trigger - auto-extract tasks when a new recording is created
+// Firestore trigger - auto-transcribe and extract tasks when a new recording is created
 export const onRecordingCreate = functions.firestore
   .document("users/{userId}/recordings/{recordingId}")
   .onCreate(async (snapshot, context) => {
     const { userId, recordingId } = context.params;
-    const recordingData = snapshot.data();
+    let recordingData = snapshot.data();
     
     console.log(`New recording created: ${recordingId} for user ${userId}`);
     
     // Check if recording has a transcript
-    const transcript = recordingData.transcript;
+    let transcript = recordingData.transcript;
+    
+    // If no transcript but has audioUrl, try to transcribe with Whisper
+    if ((!transcript || transcript.trim().length === 0) && recordingData.audioUrl) {
+      console.log("No transcript but has audio URL - attempting Whisper transcription...");
+      
+      try {
+        const transcriptionResult = await transcribeWithWhisperFromTrigger(
+          recordingData.audioUrl,
+          recordingData.filename || "audio.m4a"
+        );
+        
+        if (transcriptionResult && transcriptionResult.trim().length > 0) {
+          transcript = transcriptionResult;
+          
+          // Update the recording with the transcript
+          await snapshot.ref.update({
+            transcript: transcript,
+            isTranscribing: false,
+            transcribedAt: admin.firestore.FieldValue.serverTimestamp(),
+            transcriptionModel: "whisper-1",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          
+          console.log(`✅ Whisper transcription complete: ${transcript.substring(0, 100)}...`);
+        } else {
+          console.log("Whisper returned empty transcript");
+          await snapshot.ref.update({
+            transcript: "[No speech detected]",
+            isTranscribing: false,
+            transcriptionModel: "whisper-1",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+      } catch (transcriptionError: any) {
+        console.error("Whisper transcription failed:", transcriptionError.message);
+        await snapshot.ref.update({
+          transcript: `[Transcription failed: ${transcriptionError.message}]`,
+          isTranscribing: false,
+          transcriptionError: transcriptionError.message,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+    }
+    
     if (!transcript || transcript.trim().length === 0) {
-      console.log("No transcript available, skipping auto-extraction");
+      console.log("No transcript available and no audio URL, skipping");
       return;
     }
     
@@ -305,29 +419,42 @@ export const onRecordingCreate = functions.firestore
       
       const openai = new OpenAI({ apiKey });
       
-      const prompt = `You are an AI assistant that analyzes conversation transcripts. Extract:
-1. ALL discussion points (meetings, decisions, tasks mentioned, ideas, etc.)
-2. USER's actionable tasks only (things the user needs to do)
+      const prompt = `You are an AI assistant that analyzes voice memo transcripts to extract actionable items.
 
-For each item, provide:
-- content: Brief description
-- type: user_task, other_person_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
-- speaker: Who said it (if identifiable)
+IMPORTANT: This is a voice memo recorded by the user. Extract:
+1. ALL discussion points and topics mentioned
+2. ALL tasks, to-dos, and action items - these are things the user needs to do, was told to do, or mentioned they should do
+
+Be thorough! If someone says "you need to do X" or "get X done by Y" or "I need to X" - these are tasks.
+
+For conversation_points, include:
+- content: What was discussed
+- type: user_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
+- speaker: Who said it (if identifiable, otherwise null)
 - mentionedPeople: Array of people mentioned
-- mentionedDateTime: ISO date if mentioned, null otherwise
+- mentionedDateTime: ISO date string if a date/time was mentioned, null otherwise
 - location: Location if mentioned, null otherwise
+
+For user_tasks (action items the user needs to complete):
+- title: Clear, actionable task title
+- details: Additional context or requirements
+- location: Where it needs to be done (if mentioned)
+- participants: People involved
+- suggestedDateTime: ISO date string if deadline mentioned (e.g., "Tuesday" = next Tuesday), null otherwise
+- priority: 1 (high), 2 (medium), 3 (low) based on urgency
+- category: work, personal, meeting, call, errand, health, other
 
 Return ONLY valid JSON:
 {
   "conversation_points": [
-    {"content": "...", "type": "meeting", "speaker": "John", "mentionedPeople": ["Sarah"], "mentionedDateTime": null, "location": "Office"}
+    {"content": "...", "type": "user_task", "speaker": null, "mentionedPeople": [], "mentionedDateTime": null, "location": null}
   ],
   "user_tasks": [
     {"title": "...", "details": "...", "location": null, "participants": [], "suggestedDateTime": null, "priority": 2, "category": "work"}
   ]
 }
 
-Transcript:
+Voice memo transcript:
 ${transcript}`;
 
       const completion = await openai.chat.completions.create({
@@ -420,7 +547,7 @@ ${transcript}`;
     }
   });
 
-// Also trigger when recording is updated (e.g., transcript added later)
+// Also trigger when recording is updated (e.g., audioUrl or transcript added later)
 export const onRecordingUpdate = functions.firestore
   .document("users/{userId}/recordings/{recordingId}")
   .onUpdate(async (change, context) => {
@@ -428,10 +555,61 @@ export const onRecordingUpdate = functions.firestore
     const before = change.before.data();
     const after = change.after.data();
     
-    // Check if transcript was just added (wasn't there before, is there now)
+    // Check if audioUrl was just added and there's no transcript yet
+    const hadAudioUrl = before.audioUrl && before.audioUrl.trim().length > 0;
+    const hasAudioUrl = after.audioUrl && after.audioUrl.trim().length > 0;
     const hadTranscript = before.transcript && before.transcript.trim().length > 0;
-    const hasTranscript = after.transcript && after.transcript.trim().length > 0;
+    let hasTranscript = after.transcript && after.transcript.trim().length > 0;
     
+    // If audioUrl was just added and no transcript, transcribe with Whisper
+    if (!hadAudioUrl && hasAudioUrl && !hasTranscript && !after.isTranscribing) {
+      console.log(`Audio URL added to recording ${recordingId}, triggering Whisper transcription...`);
+      
+      try {
+        // Mark as transcribing
+        await change.after.ref.update({
+          isTranscribing: true,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        
+        const transcript = await transcribeWithWhisperFromTrigger(
+          after.audioUrl,
+          after.filename || "audio.m4a"
+        );
+        
+        if (transcript && transcript.trim().length > 0) {
+          await change.after.ref.update({
+            transcript: transcript,
+            isTranscribing: false,
+            transcribedAt: admin.firestore.FieldValue.serverTimestamp(),
+            transcriptionModel: "whisper-1",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          
+          console.log(`✅ Whisper transcription complete for ${recordingId}`);
+          hasTranscript = true;
+        } else {
+          await change.after.ref.update({
+            transcript: "[No speech detected]",
+            isTranscribing: false,
+            transcriptionModel: "whisper-1",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+      } catch (error: any) {
+        console.error(`Whisper transcription failed for ${recordingId}:`, error.message);
+        await change.after.ref.update({
+          transcript: `[Transcription failed: ${error.message}]`,
+          isTranscribing: false,
+          transcriptionError: error.message,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return;
+      }
+    }
+    
+    // Check if transcript was just added (either by Whisper above or iOS)
     if (!hadTranscript && hasTranscript && !after.tasksExtracted) {
       console.log(`Transcript added to recording ${recordingId}, triggering auto-extraction...`);
       
@@ -451,21 +629,25 @@ export const onRecordingUpdate = functions.firestore
         const openai = new OpenAI({ apiKey });
         const transcript = after.transcript;
         
-        const prompt = `You are an AI assistant that analyzes conversation transcripts. Extract:
-1. ALL discussion points (meetings, decisions, tasks mentioned, ideas, etc.)
-2. USER's actionable tasks only (things the user needs to do)
+        const prompt = `You are an AI assistant that analyzes voice memo transcripts to extract actionable items.
+
+IMPORTANT: This is a voice memo recorded by the user. Extract:
+1. ALL discussion points and topics mentioned
+2. ALL tasks, to-dos, and action items - these are things the user needs to do, was told to do, or mentioned they should do
+
+Be thorough! If someone says "you need to do X" or "get X done by Y" or "I need to X" - these are tasks.
 
 Return ONLY valid JSON:
 {
   "conversation_points": [
-    {"content": "...", "type": "meeting|user_task|other_person_task|event|deadline|reminder|decision|question|follow_up|information|idea|other", "speaker": null, "mentionedPeople": [], "mentionedDateTime": null, "location": null}
+    {"content": "...", "type": "user_task|meeting|event|deadline|reminder|decision|question|follow_up|information|idea|other", "speaker": null, "mentionedPeople": [], "mentionedDateTime": null, "location": null}
   ],
   "user_tasks": [
-    {"title": "...", "details": null, "location": null, "participants": [], "suggestedDateTime": null, "priority": null, "category": "work"}
+    {"title": "Clear actionable task", "details": "Additional context", "location": null, "participants": [], "suggestedDateTime": null, "priority": 2, "category": "work"}
   ]
 }
 
-Transcript:
+Voice memo transcript:
 ${transcript}`;
 
         const completion = await openai.chat.completions.create({

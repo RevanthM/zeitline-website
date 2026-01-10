@@ -108,10 +108,16 @@ class RecordingsManager {
             downloadBtn.addEventListener('click', () => this.downloadTranscript());
         }
         
-        // Transcribe button
+        // Transcribe button - uses Whisper API
         const transcribeBtn = document.getElementById('transcribeBtn');
         if (transcribeBtn) {
-            transcribeBtn.addEventListener('click', () => this.transcribeRecording());
+            transcribeBtn.addEventListener('click', () => this.transcribeWithWhisper());
+        }
+        
+        // Re-transcribe button for already transcribed recordings
+        const retranscribeBtn = document.getElementById('retranscribeBtn');
+        if (retranscribeBtn) {
+            retranscribeBtn.addEventListener('click', () => this.transcribeWithWhisper(true));
         }
     }
     
@@ -301,6 +307,8 @@ class RecordingsManager {
         // Update transcript
         const transcriptText = document.getElementById('transcriptText');
         const noTranscript = document.getElementById('noTranscript');
+        const transcriptionStatus = document.getElementById('transcriptionStatus');
+        const transcriptionModel = document.getElementById('transcriptionModel');
         
         if (recording.transcript) {
             if (transcriptText) {
@@ -308,9 +316,17 @@ class RecordingsManager {
                 transcriptText.textContent = recording.transcript;
             }
             if (noTranscript) noTranscript.style.display = 'none';
+            
+            // Show transcription model info if available
+            if (transcriptionStatus && transcriptionModel) {
+                const model = recording.transcriptionModel || 'Apple Speech';
+                transcriptionStatus.style.display = 'block';
+                transcriptionModel.textContent = `Transcribed with: ${model === 'whisper-1' ? 'OpenAI Whisper' : model}`;
+            }
         } else {
             if (transcriptText) transcriptText.style.display = 'none';
             if (noTranscript) noTranscript.style.display = 'block';
+            if (transcriptionStatus) transcriptionStatus.style.display = 'none';
         }
         
         // Load audio from Firebase Storage if URL is available
@@ -337,20 +353,36 @@ class RecordingsManager {
                     message: error?.message,
                     networkState: this.audioPlayer.networkState,
                     readyState: this.audioPlayer.readyState,
-                    src: this.audioPlayer.src
+                    src: this.audioPlayer.src,
+                    filename: recording.filename
                 });
                 
-                // Provide more specific error messages
-                let errorMsg = 'Unable to load audio file';
-                if (error) {
-                    switch (error.code) {
-                        case 1: errorMsg = 'Audio loading aborted'; break;
-                        case 2: errorMsg = 'Network error loading audio'; break;
-                        case 3: errorMsg = 'Audio decoding failed'; break;
-                        case 4: errorMsg = 'Audio format not supported'; break;
+                // Check if this is a CAF file (not supported by browsers)
+                const isCAF = recording.filename?.toLowerCase().endsWith('.caf') || 
+                              recording.audioUrl?.includes('.caf');
+                
+                if (isCAF || error?.code === 4) {
+                    // Show message about unsupported format
+                    this.showToast('⚠️ Audio format not supported in browser. Re-sync from iPhone app to convert.', 'warning');
+                    
+                    // Update waveform to show unavailable state
+                    const waveform = document.getElementById('waveform');
+                    if (waveform) {
+                        waveform.innerHTML = '<p style="color: var(--text-muted); font-size: 0.8rem;">Audio format requires conversion</p>';
                     }
+                } else {
+                    // Provide more specific error messages
+                    let errorMsg = 'Unable to load audio file';
+                    if (error) {
+                        switch (error.code) {
+                            case 1: errorMsg = 'Audio loading aborted'; break;
+                            case 2: errorMsg = 'Network error loading audio'; break;
+                            case 3: errorMsg = 'Audio decoding failed'; break;
+                            case 4: errorMsg = 'Audio format not supported'; break;
+                        }
+                    }
+                    this.showToast(errorMsg, 'error');
                 }
-                this.showToast(errorMsg, 'error');
             };
             
             this.audioPlayer.load();
@@ -385,6 +417,403 @@ class RecordingsManager {
         document.querySelectorAll('.recording-card').forEach(card => {
             card.classList.toggle('active', card.dataset.id === recording.id);
         });
+        
+        // Load extracted tasks and conversation points automatically
+        this.loadExtractedData(recording);
+    }
+    
+    /**
+     * Load extracted tasks and conversation points for a recording
+     * These are automatically extracted by the cloud function after transcription
+     */
+    async loadExtractedData(recording) {
+        const tasksList = document.getElementById('extractedTasksList');
+        const noTasks = document.getElementById('noTasks');
+        const pointsList = document.getElementById('conversationPointsList');
+        const noPoints = document.getElementById('noPoints');
+        const extractionStatus = document.getElementById('extractionStatus');
+        
+        // Check if we have a valid transcript
+        const hasValidTranscript = recording.transcript && 
+            !recording.transcript.startsWith('[') && 
+            recording.transcript.trim().length > 10;
+        
+        // Check actual extracted counts
+        const taskCount = recording.extractedTaskCount || 0;
+        const pointCount = recording.extractedPointCount || 0;
+        const hasExtractedItems = taskCount > 0 || pointCount > 0;
+        
+        // Show extract button if:
+        // 1. Has valid transcript AND
+        // 2. Either not extracted yet OR extracted but found 0 items
+        const shouldShowExtractButton = hasValidTranscript && 
+            (!recording.tasksExtracted || !hasExtractedItems);
+        
+        if (shouldShowExtractButton) {
+            // Has transcript but not properly extracted - show extract button
+            if (extractionStatus) {
+                const buttonText = recording.tasksExtracted ? '🔄 Re-extract Tasks' : '🤖 Extract Tasks Now';
+                extractionStatus.innerHTML = `<button id="extractNowBtn" style="background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); color: var(--bg-deep); border: none; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.75rem;">${buttonText}</button>`;
+                
+                // Add click handler
+                setTimeout(() => {
+                    const extractBtn = document.getElementById('extractNowBtn');
+                    if (extractBtn) {
+                        extractBtn.addEventListener('click', () => this.extractTasksFromRecording(recording));
+                    }
+                }, 0);
+            }
+            
+            // Show "no tasks" message with extract prompt
+            if (tasksList) tasksList.style.display = 'none';
+            if (noTasks) {
+                noTasks.style.display = 'block';
+                noTasks.innerHTML = `
+                    <div class="no-transcript-icon">📋</div>
+                    <p>No tasks found</p>
+                    <p style="font-size: 0.75rem; opacity: 0.7;">Click "Extract Tasks Now" above to analyze this transcript with AI</p>
+                `;
+            }
+            if (pointsList) pointsList.style.display = 'none';
+            if (noPoints) noPoints.style.display = 'block';
+            return;
+        } else if (!hasValidTranscript) {
+            // No valid transcript - show waiting message
+            if (extractionStatus) {
+                extractionStatus.textContent = 'Waiting for transcript';
+            }
+            if (tasksList) tasksList.style.display = 'none';
+            if (noTasks) noTasks.style.display = 'block';
+            if (pointsList) pointsList.style.display = 'none';
+            if (noPoints) noPoints.style.display = 'block';
+            return;
+        }
+        
+        // Has extracted items - show status and hide "no tasks/points" messages
+        if (extractionStatus) {
+            extractionStatus.innerHTML = `✅ Extracted (${taskCount} tasks, ${pointCount} points) <button id="reExtractBtn" style="background: transparent; border: 1px solid var(--border-subtle); color: var(--text-muted); padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.65rem; margin-left: 0.5rem;">🔄</button>`;
+            
+            // Add re-extract handler
+            setTimeout(() => {
+                const reExtractBtn = document.getElementById('reExtractBtn');
+                if (reExtractBtn) {
+                    reExtractBtn.addEventListener('click', () => this.extractTasksFromRecording(recording));
+                }
+            }, 0);
+        }
+        
+        // Hide "no tasks/points" by default since we have extracted items
+        if (noTasks) noTasks.style.display = 'none';
+        if (noPoints) noPoints.style.display = 'none';
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                console.log('No user logged in, cannot load extracted data');
+                return;
+            }
+            
+            const db = firebase.firestore();
+            const userId = user.uid;
+            
+            console.log(`📥 Loading extracted data for recording: ${recording.id}`);
+            
+            let tasksLoaded = false;
+            let pointsLoaded = false;
+            
+            // Fetch conversation session (contains points)
+            try {
+                const sessionDoc = await db.collection('users').doc(userId)
+                    .collection('conversationSessions').doc(recording.id).get();
+                
+                console.log(`Session doc exists: ${sessionDoc.exists}`);
+                
+                if (sessionDoc.exists) {
+                    const sessionData = sessionDoc.data();
+                    const points = sessionData.points || [];
+                    
+                    console.log(`Found ${points.length} discussion points`);
+                    
+                    if (points.length > 0) {
+                        pointsLoaded = true;
+                        if (noPoints) noPoints.style.display = 'none';
+                        if (pointsList) {
+                            pointsList.style.display = 'block';
+                            pointsList.innerHTML = points.map(point => this.createPointHTML(point)).join('');
+                        }
+                    }
+                }
+            } catch (sessionError) {
+                console.log('Error fetching conversation session:', sessionError);
+            }
+            
+            // Fetch tasks from master task list that belong to this recording
+            try {
+                const taskListDoc = await db.collection('users').doc(userId)
+                    .collection('taskLists').doc('master').get();
+                
+                console.log(`Task list doc exists: ${taskListDoc.exists}`);
+                
+                if (taskListDoc.exists) {
+                    const taskListData = taskListDoc.data();
+                    const allTasks = taskListData.tasks || [];
+                    
+                    console.log(`Total tasks in master list: ${allTasks.length}`);
+                    
+                    // Filter tasks for this recording
+                    const recordingTasks = allTasks.filter(task => task.sessionId === recording.id);
+                    
+                    console.log(`Tasks for this recording: ${recordingTasks.length}`);
+                    
+                    if (recordingTasks.length > 0) {
+                        tasksLoaded = true;
+                        if (noTasks) noTasks.style.display = 'none';
+                        if (tasksList) {
+                            tasksList.style.display = 'block';
+                            tasksList.innerHTML = recordingTasks.map(task => this.createTaskHTML(task)).join('');
+                        }
+                    }
+                }
+            } catch (taskError) {
+                console.log('Error fetching task list:', taskError);
+            }
+            
+            // If we expected data but didn't find it, show a message
+            if (!tasksLoaded && taskCount > 0) {
+                console.log('Expected tasks but none found in Firestore');
+                if (noTasks) {
+                    noTasks.style.display = 'block';
+                    noTasks.innerHTML = `
+                        <div class="no-transcript-icon">⏳</div>
+                        <p>Tasks being synced...</p>
+                        <p style="font-size: 0.75rem; opacity: 0.7;">Try refreshing the page in a moment</p>
+                    `;
+                }
+            }
+            
+            if (!pointsLoaded && pointCount > 0) {
+                console.log('Expected points but none found in Firestore');
+                if (noPoints) {
+                    noPoints.style.display = 'block';
+                    noPoints.innerHTML = `<p style="text-align: center; color: var(--text-muted); padding: 1rem;">Points being synced...</p>`;
+                }
+            }
+            
+        } catch (error) {
+            console.error('Error loading extracted data:', error);
+        }
+    }
+    
+    /**
+     * Manually extract tasks from a recording's transcript using AI
+     */
+    async extractTasksFromRecording(recording) {
+        if (!recording || !recording.transcript) {
+            this.showToast('No transcript available to extract from', 'warning');
+            return;
+        }
+        
+        const extractionStatus = document.getElementById('extractionStatus');
+        const tasksList = document.getElementById('extractedTasksList');
+        const noTasks = document.getElementById('noTasks');
+        const pointsList = document.getElementById('conversationPointsList');
+        const noPoints = document.getElementById('noPoints');
+        
+        if (extractionStatus) {
+            extractionStatus.innerHTML = '⏳ Extracting tasks with AI...';
+        }
+        
+        this.showToast('🤖 Analyzing transcript with AI...', 'info');
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                throw new Error('Please sign in first');
+            }
+            
+            const token = await user.getIdToken();
+            
+            // Call the task extraction API
+            const response = await fetch('/api/task-extraction/extract', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    transcript: recording.transcript,
+                    recordingId: recording.id
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Extraction failed');
+            }
+            
+            const result = await response.json();
+            
+            console.log('Extraction result:', result);
+            
+            const extractedTasks = result.userTasks || [];
+            const extractedPoints = result.conversationPoints || [];
+            
+            // Update local recording object
+            recording.tasksExtracted = true;
+            recording.extractedTaskCount = extractedTasks.length;
+            recording.extractedPointCount = extractedPoints.length;
+            
+            // Also update in the recordings array
+            const recordingIndex = this.recordings.findIndex(r => r.id === recording.id);
+            if (recordingIndex !== -1) {
+                this.recordings[recordingIndex].tasksExtracted = true;
+                this.recordings[recordingIndex].extractedTaskCount = recording.extractedTaskCount;
+                this.recordings[recordingIndex].extractedPointCount = recording.extractedPointCount;
+            }
+            
+            // Update extraction status
+            if (extractionStatus) {
+                extractionStatus.innerHTML = `✅ Extracted (${extractedTasks.length} tasks, ${extractedPoints.length} points) <button id="reExtractBtn" style="background: transparent; border: 1px solid var(--border-subtle); color: var(--text-muted); padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.65rem; margin-left: 0.5rem;">🔄</button>`;
+                
+                setTimeout(() => {
+                    const reExtractBtn = document.getElementById('reExtractBtn');
+                    if (reExtractBtn) {
+                        reExtractBtn.addEventListener('click', () => this.extractTasksFromRecording(recording));
+                    }
+                }, 0);
+            }
+            
+            console.log('📋 Displaying extracted data...');
+            console.log('Tasks:', extractedTasks);
+            console.log('Points:', extractedPoints);
+            console.log('tasksList element:', tasksList);
+            console.log('pointsList element:', pointsList);
+            
+            // Display tasks immediately from API response
+            if (extractedTasks.length > 0) {
+                console.log('✅ Showing tasks...');
+                if (noTasks) {
+                    noTasks.style.display = 'none';
+                    console.log('Hidden noTasks');
+                }
+                if (tasksList) {
+                    const tasksHTML = extractedTasks.map(task => `
+                        <div class="task-item" style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.75rem; background: var(--bg-card); border-radius: 8px; margin-bottom: 0.5rem; border: 1px solid var(--border-subtle);">
+                            <div class="task-icon" style="font-size: 1.25rem;">💼</div>
+                            <div class="task-content" style="flex: 1;">
+                                <div class="task-title" style="font-weight: 500; margin-bottom: 0.25rem;">${task.title}</div>
+                                ${task.details ? `<div style="margin-top: 0.25rem; font-size: 0.8rem; color: var(--text-muted);">${task.details}</div>` : ''}
+                                <div class="task-meta" style="font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                                    ${task.suggestedDateTime ? `<span>📅 ${task.suggestedDateTime}</span>` : ''}
+                                    ${task.location ? `<span>📍 ${task.location}</span>` : ''}
+                                    ${task.priority ? `<span>⚡ P${task.priority}</span>` : ''}
+                                    ${task.category ? `<span>🏷️ ${task.category}</span>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    tasksList.innerHTML = tasksHTML;
+                    tasksList.style.display = 'block';
+                    tasksList.style.visibility = 'visible';
+                    console.log('Set tasksList HTML and display:block');
+                }
+            } else {
+                console.log('No tasks to display');
+                if (tasksList) tasksList.style.display = 'none';
+                if (noTasks) {
+                    noTasks.style.display = 'block';
+                    noTasks.innerHTML = `
+                        <div style="text-align: center; padding: 1rem; color: var(--text-muted);">
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">📋</div>
+                            <p>No actionable tasks found</p>
+                            <p style="font-size: 0.75rem; opacity: 0.7;">The AI didn't find any specific tasks in this transcript</p>
+                        </div>
+                    `;
+                }
+            }
+            
+            // Display discussion points immediately from API response
+            if (extractedPoints.length > 0) {
+                console.log('✅ Showing discussion points...');
+                if (noPoints) {
+                    noPoints.style.display = 'none';
+                    console.log('Hidden noPoints');
+                }
+                if (pointsList) {
+                    const pointsHTML = extractedPoints.map(point => `
+                        <div class="point-item" style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.6rem; border-bottom: 1px solid var(--border-subtle);">
+                            <span class="point-type-badge" style="font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; background: rgba(139, 92, 246, 0.2); color: #8b5cf6; white-space: nowrap;">${(point.type || 'other').replace('_', ' ')}</span>
+                            <div class="point-content" style="flex: 1; font-size: 0.85rem;">
+                                ${point.content}
+                                ${point.speaker ? `<span style="opacity: 0.6;"> — ${point.speaker}</span>` : ''}
+                            </div>
+                        </div>
+                    `).join('');
+                    
+                    pointsList.innerHTML = pointsHTML;
+                    pointsList.style.display = 'block';
+                    pointsList.style.visibility = 'visible';
+                    console.log('Set pointsList HTML and display:block');
+                }
+            } else {
+                console.log('No points to display');
+                if (pointsList) pointsList.style.display = 'none';
+                if (noPoints) noPoints.style.display = 'block';
+            }
+            
+            this.showToast(`✅ Extracted ${extractedTasks.length} tasks and ${extractedPoints.length} discussion points!`, 'success');
+            
+        } catch (error) {
+            console.error('Task extraction error:', error);
+            this.showToast(`❌ Extraction failed: ${error.message}`, 'error');
+            
+            if (extractionStatus) {
+                extractionStatus.innerHTML = `<button id="extractNowBtn" style="background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); color: var(--bg-deep); border: none; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.75rem;">🤖 Retry Extraction</button>`;
+                setTimeout(() => {
+                    const extractBtn = document.getElementById('extractNowBtn');
+                    if (extractBtn) {
+                        extractBtn.addEventListener('click', () => this.extractTasksFromRecording(recording));
+                    }
+                }, 0);
+            }
+        }
+    }
+    
+    createTaskHTML(task) {
+        const categoryIcons = {
+            meeting: '👥', call: '📞', deadline: '⏰', reminder: '🔔',
+            errand: '🛒', work: '💼', personal: '👤', health: '❤️',
+            travel: '✈️', other: '📋'
+        };
+        const icon = categoryIcons[task.category] || '📋';
+        
+        return `
+            <div class="task-item">
+                <div class="task-icon">${icon}</div>
+                <div class="task-content">
+                    <div class="task-title">${task.title}</div>
+                    <div class="task-meta">
+                        ${task.suggestedDate ? `<span>📅 ${new Date(task.suggestedDate).toLocaleDateString()}</span>` : ''}
+                        ${task.location ? `<span>📍 ${task.location}</span>` : ''}
+                        ${task.participants?.length ? `<span>👥 ${task.participants.length}</span>` : ''}
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    createPointHTML(point) {
+        const typeClass = (point.type || 'other').replace('_', '-');
+        return `
+            <div class="point-item">
+                <span class="point-type-badge ${typeClass}">${(point.type || 'other').replace('_', ' ')}</span>
+                <div class="point-content">
+                    ${point.content}
+                    ${point.speaker ? `<span style="opacity: 0.6;"> — ${point.speaker}</span>` : ''}
+                </div>
+            </div>
+        `;
     }
     
     async togglePlay() {
@@ -592,21 +1021,86 @@ class RecordingsManager {
         this.showToast('Transcript downloaded!', 'success');
     }
     
-    async transcribeRecording() {
-        if (!this.currentRecording) return;
+    /**
+     * Transcribe the current recording using OpenAI Whisper API
+     * This provides much better accuracy than Apple's built-in speech recognition
+     * 
+     * @param {boolean} forceRetranscribe - If true, re-transcribe even if already transcribed
+     */
+    async transcribeWithWhisper(forceRetranscribe = false) {
+        if (!this.currentRecording) {
+            this.showToast('Please select a recording first', 'warning');
+            return;
+        }
         
-        this.showToast('Transcription started...', 'success');
+        if (!this.currentRecording.audioUrl) {
+            this.showToast('No audio file available. Please sync from iPhone app first.', 'warning');
+            return;
+        }
         
-        // In a real implementation, this would call the transcription API
-        // For demo, we'll simulate a transcription
-        setTimeout(() => {
-            const transcripts = [
-                'This is a sample transcription of your voice recording. The actual transcription would be generated using speech recognition technology.',
-                'Important meeting notes: Discussed project timeline, assigned tasks to team members, and set deadlines for next sprint.',
-                'Reminder to review the quarterly report and prepare presentation slides for the board meeting next week.'
-            ];
+        // Check if already transcribed and not forcing
+        if (this.currentRecording.transcript && !forceRetranscribe) {
+            this.showToast('Recording already transcribed. Use "Re-transcribe" to update.', 'info');
+            return;
+        }
+        
+        const transcribeBtn = document.getElementById('transcribeBtn');
+        const retranscribeBtn = document.getElementById('retranscribeBtn');
+        const originalBtnText = transcribeBtn ? transcribeBtn.textContent : 'Transcribe';
+        
+        // Update UI to show processing
+        if (transcribeBtn) {
+            transcribeBtn.disabled = true;
+            transcribeBtn.textContent = 'Transcribing...';
+        }
+        if (retranscribeBtn) {
+            retranscribeBtn.disabled = true;
+        }
+        
+        this.showToast('🎤 Starting AI transcription with Whisper...', 'info');
+        
+        try {
+            // Get auth token
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                throw new Error('Please sign in to transcribe recordings');
+            }
             
-            this.currentRecording.transcript = transcripts[Math.floor(Math.random() * transcripts.length)];
+            const token = await user.getIdToken();
+            
+            // Call Whisper transcription API
+            const response = await fetch(`/api/recordings/${this.currentRecording.id}/transcribe`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    forceRetranscribe: forceRetranscribe
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Transcription failed');
+            }
+            
+            const result = await response.json();
+            const transcript = result.data?.transcript;
+            
+            if (!transcript) {
+                throw new Error('No transcript received');
+            }
+            
+            // Update local recording object
+            this.currentRecording.transcript = transcript;
+            this.currentRecording.transcriptionModel = result.data?.model || 'whisper-1';
+            
+            // Also update in the recordings array
+            const recordingIndex = this.recordings.findIndex(r => r.id === this.currentRecording.id);
+            if (recordingIndex !== -1) {
+                this.recordings[recordingIndex].transcript = transcript;
+            }
             
             // Update UI
             const transcriptText = document.getElementById('transcriptText');
@@ -614,7 +1108,7 @@ class RecordingsManager {
             
             if (transcriptText) {
                 transcriptText.style.display = 'block';
-                transcriptText.textContent = this.currentRecording.transcript;
+                transcriptText.textContent = transcript;
             }
             if (noTranscript) noTranscript.style.display = 'none';
             
@@ -622,8 +1116,85 @@ class RecordingsManager {
             this.updateStats();
             this.renderRecordings();
             
-            this.showToast('Transcription complete!', 'success');
-        }, 2000);
+            const cached = result.data?.cached ? ' (cached)' : '';
+            this.showToast(`✅ Transcription complete${cached}!`, 'success');
+            
+            console.log('Whisper transcription result:', {
+                model: result.data?.model,
+                cached: result.data?.cached,
+                transcriptLength: transcript.length
+            });
+            
+        } catch (error) {
+            console.error('Transcription error:', error);
+            this.showToast(`❌ Transcription failed: ${error.message}`, 'error');
+        } finally {
+            // Reset buttons
+            if (transcribeBtn) {
+                transcribeBtn.disabled = false;
+                transcribeBtn.textContent = originalBtnText;
+            }
+            if (retranscribeBtn) {
+                retranscribeBtn.disabled = false;
+            }
+        }
+    }
+    
+    /**
+     * Batch transcribe all recordings that don't have transcripts
+     */
+    async batchTranscribe() {
+        const pendingRecordings = this.recordings.filter(r => !r.transcript && r.audioUrl);
+        
+        if (pendingRecordings.length === 0) {
+            this.showToast('All recordings are already transcribed!', 'info');
+            return;
+        }
+        
+        this.showToast(`🎤 Starting batch transcription of ${pendingRecordings.length} recordings...`, 'info');
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                throw new Error('Please sign in first');
+            }
+            
+            const token = await user.getIdToken();
+            
+            const response = await fetch('/api/recordings/transcribe-batch', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    limit: 5 // Process 5 at a time
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Batch transcription failed');
+            }
+            
+            const result = await response.json();
+            
+            // Reload recordings to get updated transcripts
+            await this.loadRecordings();
+            this.updateStats();
+            
+            const successCount = result.data?.results?.filter(r => r.status === 'success').length || 0;
+            this.showToast(`✅ Transcribed ${successCount} recordings!`, 'success');
+            
+        } catch (error) {
+            console.error('Batch transcription error:', error);
+            this.showToast(`❌ Batch transcription failed: ${error.message}`, 'error');
+        }
+    }
+    
+    // Legacy method for backwards compatibility
+    async transcribeRecording() {
+        return this.transcribeWithWhisper(false);
     }
     
     showToast(message, type = 'success') {
@@ -689,165 +1260,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.recordingsManager = new RecordingsManager();
 });
 
-// ============================================
-// AI Task Extraction Manager
-// ============================================
-
-class TaskExtractionManager {
-    constructor(recordingsManager) {
-        this.recordingsManager = recordingsManager;
-        this.setupEventListeners();
-    }
-    
-    setupEventListeners() {
-        const extractBtn = document.getElementById('extractTasksBtn');
-        if (extractBtn) {
-            extractBtn.addEventListener('click', () => this.extractTasks());
-        }
-    }
-    
-    async extractTasks() {
-        const recording = this.recordingsManager.currentRecording;
-        if (!recording) {
-            this.recordingsManager.showToast('Please select a recording first', 'warning');
-            return;
-        }
-        
-        if (!recording.transcript) {
-            this.recordingsManager.showToast('No transcript available. Please transcribe first.', 'warning');
-            return;
-        }
-        
-        const extractBtn = document.getElementById('extractTasksBtn');
-        extractBtn.disabled = true;
-        extractBtn.textContent = 'Extracting...';
-        
-        try {
-            const result = await this.callBackendAPI(recording.transcript, recording.id);
-            this.displayResults(result);
-            this.recordingsManager.showToast(`Extracted ${result.userTasks.length} tasks and ${result.conversationPoints.length} discussion points!`, 'success');
-        } catch (error) {
-            console.error('Task extraction failed:', error);
-            this.recordingsManager.showToast('Task extraction failed: ' + error.message, 'error');
-        } finally {
-            extractBtn.disabled = false;
-            extractBtn.textContent = 'Extract Tasks';
-        }
-    }
-    
-    async callBackendAPI(transcript, recordingId) {
-        // Get the current user's auth token
-        const user = firebase.auth().currentUser;
-        if (!user) {
-            throw new Error('Please sign in to extract tasks');
-        }
-        
-        const token = await user.getIdToken();
-        
-        // Call our secure backend API
-        const response = await fetch('/api/task-extraction/extract', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                transcript,
-                recordingId
-            })
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Extraction failed');
-        }
-        
-        const data = await response.json();
-        
-        return {
-            conversationPoints: data.conversationPoints || [],
-            userTasks: data.userTasks || [],
-            recordingId: recordingId,
-            extractedAt: data.extractedAt
-        };
-    }
-    
-    displayResults(result) {
-        // Display extracted tasks
-        const tasksList = document.getElementById('extractedTasksList');
-        const noTasks = document.getElementById('noTasks');
-        
-        if (result.userTasks.length > 0) {
-            noTasks.style.display = 'none';
-            tasksList.style.display = 'block';
-            tasksList.innerHTML = result.userTasks.map(task => this.createTaskHTML(task)).join('');
-        } else {
-            noTasks.innerHTML = '<p style="text-align: center; color: var(--text-muted);">No actionable tasks found in this recording</p>';
-        }
-        
-        // Display conversation points
-        const pointsList = document.getElementById('conversationPointsList');
-        const noPoints = document.getElementById('noPoints');
-        
-        if (result.conversationPoints.length > 0) {
-            noPoints.style.display = 'none';
-            pointsList.style.display = 'block';
-            pointsList.innerHTML = result.conversationPoints.map(point => this.createPointHTML(point)).join('');
-        }
-    }
-    
-    createTaskHTML(task) {
-        const categoryIcons = {
-            meeting: '👥', call: '📞', deadline: '⏰', reminder: '🔔',
-            errand: '🛒', work: '💼', personal: '👤', health: '❤️',
-            travel: '✈️', other: '📋'
-        };
-        const icon = categoryIcons[task.category] || '📋';
-        
-        return `
-            <div class="task-item">
-                <div class="task-icon">${icon}</div>
-                <div class="task-content">
-                    <div class="task-title">${task.title}</div>
-                    <div class="task-meta">
-                        ${task.suggestedDateTime ? `<span>📅 ${new Date(task.suggestedDateTime).toLocaleDateString()}</span>` : ''}
-                        ${task.location ? `<span>📍 ${task.location}</span>` : ''}
-                        ${task.participants?.length ? `<span>👥 ${task.participants.length}</span>` : ''}
-                    </div>
-                </div>
-                <div class="task-actions">
-                    <button class="task-action-btn add-to-list" onclick="window.taskExtractor.addToCalendar('${task.title}')">
-                        + Calendar
-                    </button>
-                </div>
-            </div>
-        `;
-    }
-    
-    createPointHTML(point) {
-        const typeClass = point.type.replace('_', '-');
-        return `
-            <div class="point-item">
-                <span class="point-type-badge ${typeClass}">${point.type.replace('_', ' ')}</span>
-                <div class="point-content">
-                    ${point.content}
-                    ${point.speaker ? `<span style="opacity: 0.6;"> — ${point.speaker}</span>` : ''}
-                </div>
-            </div>
-        `;
-    }
-    
-    addToCalendar(taskTitle) {
-        // Open Google Calendar with prefilled event
-        const calUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(taskTitle)}`;
-        window.open(calUrl, '_blank');
-    }
-}
-
-// Initialize task extractor after recordings manager
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-        window.taskExtractor = new TaskExtractionManager(window.recordingsManager);
-    }, 100);
-});
+// Task extraction is now automatic via cloud functions
+// Tasks and conversation points are loaded in RecordingsManager.loadExtractedData()
 

@@ -4,8 +4,21 @@
 import { Router, Request, Response } from "express";
 import * as admin from "firebase-admin";
 import { verifyAuth } from "./middleware/auth";
+import OpenAI from "openai";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 const router = Router();
+
+// Initialize OpenAI client
+const getOpenAIClient = () => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OpenAI API key not configured");
+  }
+  return new OpenAI({ apiKey });
+};
 
 // Get all recordings for a user
 router.get("/", verifyAuth, async (req: Request, res: Response) => {
@@ -372,6 +385,471 @@ router.get("/stats/summary", verifyAuth, async (req: Request, res: Response) => 
     });
   }
 });
+
+// ============================================
+// WHISPER TRANSCRIPTION ENDPOINTS
+// ============================================
+
+/**
+ * Transcribe a recording using OpenAI Whisper API
+ * This provides much better accuracy than Apple's SFSpeechRecognizer
+ * 
+ * POST /recordings/:recordingId/transcribe
+ */
+router.post("/:recordingId/transcribe", verifyAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).user.uid;
+  const { recordingId } = req.params;
+  const { forceRetranscribe = false } = req.body;
+
+  console.log(`🎤 Transcription request for recording ${recordingId} by user ${userId}`);
+
+  try {
+    const db = admin.firestore();
+    const recordingRef = db
+      .collection("users")
+      .doc(userId)
+      .collection("recordings")
+      .doc(recordingId);
+
+    // Get the recording document
+    const recordingDoc = await recordingRef.get();
+    if (!recordingDoc.exists) {
+      res.status(404).json({
+        success: false,
+        error: "Recording not found",
+      });
+      return;
+    }
+
+    const recordingData = recordingDoc.data()!;
+
+    // Check if already transcribed (unless forced)
+    if (recordingData.transcript && !forceRetranscribe) {
+      console.log(`Recording ${recordingId} already has transcript, skipping`);
+      res.json({
+        success: true,
+        data: {
+          transcript: recordingData.transcript,
+          cached: true,
+        },
+      });
+      return;
+    }
+
+    // Get the audio URL
+    const audioUrl = recordingData.audioUrl;
+    if (!audioUrl) {
+      res.status(400).json({
+        success: false,
+        error: "No audio file available for this recording. Please sync from the iOS app first.",
+      });
+      return;
+    }
+
+    // Mark as transcribing
+    await recordingRef.update({
+      isTranscribing: true,
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    console.log(`📥 Downloading audio from: ${audioUrl.substring(0, 80)}...`);
+
+    // Download the audio file to temp storage
+    const tempFilePath = await downloadAudioFile(audioUrl, recordingData.filename);
+    
+    console.log(`✅ Audio downloaded to: ${tempFilePath}`);
+
+    // Transcribe using Whisper
+    const transcript = await transcribeWithWhisper(tempFilePath);
+
+    // Clean up temp file
+    try {
+      fs.unlinkSync(tempFilePath);
+    } catch (e) {
+      console.warn("Could not delete temp file:", e);
+    }
+
+    // Handle empty transcription
+    if (!transcript || transcript.trim().length === 0) {
+      await recordingRef.update({
+        transcript: "[No speech detected - audio may be silent or corrupted]",
+        isTranscribing: false,
+        transcribedAt: admin.firestore.Timestamp.now(),
+        transcriptionModel: "whisper-1",
+        updatedAt: admin.firestore.Timestamp.now(),
+      });
+
+      res.json({
+        success: true,
+        data: {
+          transcript: "[No speech detected - audio may be silent or corrupted]",
+          model: "whisper-1",
+        },
+      });
+      return;
+    }
+
+    // Update the recording with the transcript
+    await recordingRef.update({
+      transcript: transcript,
+      isTranscribing: false,
+      transcribedAt: admin.firestore.Timestamp.now(),
+      transcriptionModel: "whisper-1",
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    console.log(`✅ Transcription complete for ${recordingId}: ${transcript.substring(0, 100)}...`);
+
+    res.json({
+      success: true,
+      data: {
+        transcript: transcript,
+        model: "whisper-1",
+      },
+    });
+
+  } catch (error: any) {
+    console.error("Transcription error:", error);
+
+    // Update recording to mark transcription failed
+    try {
+      const db = admin.firestore();
+      await db
+        .collection("users")
+        .doc(userId)
+        .collection("recordings")
+        .doc(recordingId)
+        .update({
+          isTranscribing: false,
+          transcriptionError: error.message,
+          updatedAt: admin.firestore.Timestamp.now(),
+        });
+    } catch (updateError) {
+      console.error("Failed to update recording error status:", updateError);
+    }
+
+    res.status(500).json({
+      success: false,
+      error: error.message || "Transcription failed",
+    });
+  }
+});
+
+/**
+ * Transcribe audio from a URL directly (without needing a recording document)
+ * Useful for testing or transcribing audio from other sources
+ * 
+ * POST /recordings/transcribe-url
+ */
+router.post("/transcribe-url", verifyAuth, async (req: Request, res: Response) => {
+  const { audioUrl } = req.body;
+
+  if (!audioUrl) {
+    res.status(400).json({
+      success: false,
+      error: "audioUrl is required",
+    });
+    return;
+  }
+
+  try {
+    console.log(`🎤 Direct URL transcription request`);
+
+    // Download the audio file
+    const tempFilePath = await downloadAudioFile(audioUrl, "temp_audio.m4a");
+
+    // Transcribe using Whisper
+    const transcript = await transcribeWithWhisper(tempFilePath);
+
+    // Clean up temp file
+    try {
+      fs.unlinkSync(tempFilePath);
+    } catch (e) {
+      console.warn("Could not delete temp file:", e);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        transcript: transcript || "[No speech detected]",
+        model: "whisper-1",
+      },
+    });
+
+  } catch (error: any) {
+    console.error("Direct transcription error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Transcription failed",
+    });
+  }
+});
+
+/**
+ * Batch transcribe multiple recordings that don't have transcripts
+ * 
+ * POST /recordings/transcribe-batch
+ */
+router.post("/transcribe-batch", verifyAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).user.uid;
+  const { limit = 5 } = req.body;
+
+  try {
+    const db = admin.firestore();
+
+    // Find recordings without transcripts
+    const snapshot = await db
+      .collection("users")
+      .doc(userId)
+      .collection("recordings")
+      .where("transcript", "==", null)
+      .where("isTranscribing", "==", false)
+      .limit(Math.min(limit, 10)) // Max 10 at a time
+      .get();
+
+    if (snapshot.empty) {
+      res.json({
+        success: true,
+        message: "No recordings need transcription",
+        data: { processed: 0 },
+      });
+      return;
+    }
+
+    console.log(`🎤 Batch transcribing ${snapshot.size} recordings for user ${userId}`);
+
+    const results: any[] = [];
+    for (const doc of snapshot.docs) {
+      const recordingData = doc.data();
+      
+      if (!recordingData.audioUrl) {
+        results.push({
+          id: doc.id,
+          status: "skipped",
+          reason: "No audio URL",
+        });
+        continue;
+      }
+
+      try {
+        // Mark as transcribing
+        await doc.ref.update({
+          isTranscribing: true,
+          updatedAt: admin.firestore.Timestamp.now(),
+        });
+
+        // Download and transcribe
+        const tempFilePath = await downloadAudioFile(recordingData.audioUrl, recordingData.filename);
+        const transcript = await transcribeWithWhisper(tempFilePath);
+
+        // Clean up temp file
+        try {
+          fs.unlinkSync(tempFilePath);
+        } catch (e) {
+          console.warn("Could not delete temp file:", e);
+        }
+
+        // Update recording
+        await doc.ref.update({
+          transcript: transcript || "[No speech detected]",
+          isTranscribing: false,
+          transcribedAt: admin.firestore.Timestamp.now(),
+          transcriptionModel: "whisper-1",
+          updatedAt: admin.firestore.Timestamp.now(),
+        });
+
+        results.push({
+          id: doc.id,
+          status: "success",
+          transcriptPreview: (transcript || "").substring(0, 100),
+        });
+
+      } catch (error: any) {
+        console.error(`Failed to transcribe ${doc.id}:`, error);
+        
+        await doc.ref.update({
+          isTranscribing: false,
+          transcriptionError: error.message,
+          updatedAt: admin.firestore.Timestamp.now(),
+        });
+
+        results.push({
+          id: doc.id,
+          status: "error",
+          error: error.message,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        processed: results.length,
+        results,
+      },
+    });
+
+  } catch (error: any) {
+    console.error("Batch transcription error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Batch transcription failed",
+    });
+  }
+});
+
+/**
+ * Convert a recording's audio from CAF to M4A (browser-compatible)
+ * This is useful for old recordings that were uploaded in CAF format
+ * 
+ * POST /recordings/:recordingId/convert
+ */
+router.post("/:recordingId/convert", verifyAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).user.uid;
+  const { recordingId } = req.params;
+
+  console.log(`🔄 Audio conversion request for recording ${recordingId}`);
+
+  try {
+    const db = admin.firestore();
+    const recordingRef = db
+      .collection("users")
+      .doc(userId)
+      .collection("recordings")
+      .doc(recordingId);
+
+    const recordingDoc = await recordingRef.get();
+    if (!recordingDoc.exists) {
+      res.status(404).json({
+        success: false,
+        error: "Recording not found",
+      });
+      return;
+    }
+
+    const recordingData = recordingDoc.data()!;
+    const audioUrl = recordingData.audioUrl;
+
+    if (!audioUrl) {
+      res.status(400).json({
+        success: false,
+        error: "No audio file available for this recording",
+      });
+      return;
+    }
+
+    // Check if already in M4A format
+    if (audioUrl.includes('.m4a') && !audioUrl.includes('.caf')) {
+      res.json({
+        success: true,
+        data: {
+          audioUrl: audioUrl,
+          message: "Audio is already in M4A format",
+          converted: false,
+        },
+      });
+      return;
+    }
+
+    // For CAF files, we need to re-sync from the iOS app
+    // Cloud Functions don't have ffmpeg installed by default
+    res.status(400).json({
+      success: false,
+      error: "Audio is in CAF format which requires conversion. Please re-sync this recording from the iPhone app to convert it to a browser-compatible format.",
+      format: "caf",
+      suggestion: "Re-sync from iPhone app",
+    });
+
+  } catch (error: any) {
+    console.error("Audio conversion error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Conversion failed",
+    });
+  }
+});
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+/**
+ * Download audio file from URL to temp storage
+ */
+async function downloadAudioFile(url: string, filename: string): Promise<string> {
+  const tempDir = os.tmpdir();
+  
+  // Get file extension from filename or default to m4a
+  const ext = path.extname(filename) || ".m4a";
+  const tempFilePath = path.join(tempDir, `audio_${Date.now()}${ext}`);
+
+  console.log(`Downloading audio from ${url.substring(0, 50)}... to ${tempFilePath}`);
+
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download audio: ${response.status} ${response.statusText}`);
+  }
+
+  // Convert response to buffer using arrayBuffer (native fetch)
+  const arrayBuffer = await response.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  fs.writeFileSync(tempFilePath, buffer);
+
+  const stats = fs.statSync(tempFilePath);
+  console.log(`Downloaded ${stats.size} bytes to ${tempFilePath}`);
+
+  return tempFilePath;
+}
+
+/**
+ * Transcribe audio file using OpenAI Whisper API
+ */
+async function transcribeWithWhisper(filePath: string): Promise<string> {
+  const openai = getOpenAIClient();
+
+  console.log(`🎤 Transcribing with Whisper: ${filePath}`);
+
+  // Check file exists and has content
+  const stats = fs.statSync(filePath);
+  if (stats.size === 0) {
+    throw new Error("Audio file is empty");
+  }
+
+  console.log(`Audio file size: ${stats.size} bytes`);
+
+  // Create a readable stream for the file
+  const fileStream = fs.createReadStream(filePath);
+
+  try {
+    const response = await openai.audio.transcriptions.create({
+      file: fileStream,
+      model: "whisper-1",
+      language: "en", // Can be made dynamic based on user preferences
+      response_format: "text",
+      // Prompt helps with accuracy for specific domain vocabulary
+      prompt: "This is a voice memo or conversation recording. It may contain names, dates, tasks, meetings, and personal notes.",
+    });
+
+    console.log(`✅ Whisper transcription complete`);
+
+    // response is a string when response_format is "text"
+    return typeof response === "string" ? response : (response as any).text || "";
+
+  } catch (error: any) {
+    console.error("Whisper API error:", error);
+    
+    // Check for specific error types
+    if (error.message?.includes("Invalid file format")) {
+      throw new Error("Invalid audio format. Please ensure the audio file is in a supported format (m4a, mp3, wav, etc.)");
+    }
+    
+    if (error.message?.includes("File is too short")) {
+      throw new Error("Audio file is too short for transcription");
+    }
+
+    throw error;
+  }
+}
 
 export default router;
 

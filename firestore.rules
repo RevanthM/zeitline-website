@@ -84,6 +84,16 @@ service cloud.firestore {
       match /recordings/{recordingId} {
         allow read, write: if isOwner(userId);
       }
+      
+      // User's conversation sessions (extracted discussion points)
+      match /conversationSessions/{sessionId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's task lists (extracted tasks)
+      match /taskLists/{listId} {
+        allow read, write: if isOwner(userId);
+      }
     }
     
     // OAuth states collection (temporary, for OAuth flow)

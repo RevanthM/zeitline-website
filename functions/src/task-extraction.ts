@@ -63,29 +63,42 @@ router.post("/extract", verifyAuth, async (req: Request, res: Response): Promise
       return;
     }
 
-    const prompt = `You are an AI assistant that analyzes conversation transcripts. Extract:
-1. ALL discussion points (meetings, decisions, tasks mentioned, ideas, etc.)
-2. USER's actionable tasks only (things the user needs to do)
+    const prompt = `You are an AI assistant that analyzes voice memo transcripts to extract actionable items.
 
-For each item, provide:
-- content: Brief description
-- type: user_task, other_person_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
-- speaker: Who said it (if identifiable)
+IMPORTANT: This is a voice memo recorded by the user. Extract:
+1. ALL discussion points and topics mentioned
+2. ALL tasks, to-dos, and action items - these are things the user needs to do, was told to do, or mentioned they should do
+
+Be thorough! If someone says "you need to do X" or "get X done by Y" or "I need to X" - these are tasks.
+
+For conversation_points, include:
+- content: What was discussed
+- type: user_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
+- speaker: Who said it (if identifiable, otherwise null)
 - mentionedPeople: Array of people mentioned
-- mentionedDateTime: ISO date if mentioned, null otherwise
+- mentionedDateTime: ISO date string if a date/time was mentioned, null otherwise
 - location: Location if mentioned, null otherwise
+
+For user_tasks (action items the user needs to complete):
+- title: Clear, actionable task title
+- details: Additional context or requirements
+- location: Where it needs to be done (if mentioned)
+- participants: People involved
+- suggestedDateTime: ISO date string if deadline mentioned (e.g., "Tuesday" = next Tuesday), null otherwise
+- priority: 1 (high), 2 (medium), 3 (low) based on urgency
+- category: work, personal, meeting, call, errand, health, other
 
 Return ONLY valid JSON:
 {
   "conversation_points": [
-    {"content": "...", "type": "meeting", "speaker": "John", "mentionedPeople": ["Sarah"], "mentionedDateTime": null, "location": "Office"}
+    {"content": "...", "type": "user_task", "speaker": null, "mentionedPeople": [], "mentionedDateTime": null, "location": null}
   ],
   "user_tasks": [
     {"title": "...", "details": "...", "location": null, "participants": [], "suggestedDateTime": null, "priority": 2, "category": "work"}
   ]
 }
 
-Transcript:
+Voice memo transcript:
 ${transcript}`;
 
     const completion = await getOpenAIClient().chat.completions.create({

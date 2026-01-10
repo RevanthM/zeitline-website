@@ -693,9 +693,9 @@ router.get("/events", verifyAuth, async (req: Request, res: Response) => {
 
     const allEvents: any[] = [];
 
-    // Also get Zeitline-generated events from onboarding
+    // Get ALL Zeitline-generated events (from onboarding AND from tasks)
     try {
-      console.log(`Fetching Zeitline onboarding events for user ${uid} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+      console.log(`Fetching Zeitline events for user ${uid} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
       
       const zeitlineEventsRef = db
         .collection("users")
@@ -706,18 +706,12 @@ router.get("/events", verifyAuth, async (req: Request, res: Response) => {
       const zeitlineSnapshot = await zeitlineEventsRef.get();
       console.log(`Found ${zeitlineSnapshot.docs.length} Zeitline events in Firestore`);
       
-      let onboardingEventsCount = 0;
+      let addedEventsCount = 0;
       for (const doc of zeitlineSnapshot.docs) {
         const event = doc.data();
         
-        // Only process onboarding events
-        if (event.source !== "onboarding") {
-          console.log(`Skipping event ${event.id}: source is "${event.source}", not "onboarding"`);
-          continue;
-        }
-        
-        onboardingEventsCount++;
-        console.log(`Processing onboarding event: ${event.title} (${event.start})`);
+        // Process ALL Zeitline events (onboarding, task, or any other source)
+        console.log(`Processing Zeitline event: ${event.title} (source: ${event.source}, start: ${event.start})`);
         
         // Check if event falls within date range
         const eventStart = new Date(event.start);
@@ -732,15 +726,17 @@ router.get("/events", verifyAuth, async (req: Request, res: Response) => {
           );
           console.log(`Generated ${instances.length} recurring instances for ${event.title}`);
           allEvents.push(...instances);
+          addedEventsCount += instances.length;
         } else if (eventStart <= endDate && eventEnd >= startDate) {
-          console.log(`Adding single event: ${event.title}`);
+          console.log(`Adding event: ${event.title}`);
           allEvents.push(event);
+          addedEventsCount++;
         } else {
-          console.log(`Event ${event.title} is outside date range`);
+          console.log(`Event ${event.title} is outside date range (${eventStart.toISOString()} not in ${startDate.toISOString()} - ${endDate.toISOString()})`);
         }
       }
       
-      console.log(`✅ Processed ${onboardingEventsCount} onboarding events, added ${allEvents.filter(e => e.calendarType === 'zeitline' && e.source === 'onboarding').length} to results`);
+      console.log(`✅ Added ${addedEventsCount} Zeitline events to results`);
     } catch (error: any) {
       console.error("❌ Error loading Zeitline events:", error);
       console.error("Error stack:", error.stack);
@@ -2029,6 +2025,288 @@ router.post("/populate-from-onboarding", verifyAuth, async (req: Request, res: R
       success: false,
       error: error.message || "Failed to populate calendar",
     } as ApiResponse);
+  }
+});
+
+/**
+ * POST /calendars/suggest-time
+ * Find the first available time slot in user's calendar (9 AM - 10 PM)
+ * Returns date/time strings in user's local timezone
+ */
+router.post("/suggest-time", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const { taskTitle, taskDuration, timezoneOffset } = req.body;
+
+    // Default duration to 60 minutes if not specified
+    const duration = taskDuration || 60;
+    
+    // timezoneOffset is in minutes (e.g., PST is 480, EST is 300)
+    // Negative offset means ahead of UTC (e.g., India is -330)
+    const offsetMs = (timezoneOffset || 0) * 60 * 1000;
+    
+    // Get current time in user's timezone
+    const nowUTC = new Date();
+    const nowLocal = new Date(nowUTC.getTime() - offsetMs);
+
+    console.log(`Finding time slot for task: "${taskTitle}", duration: ${duration} mins`);
+    console.log(`User timezone offset: ${timezoneOffset} mins, Local time: ${nowLocal.toISOString()}`);
+
+    // Fetch all calendar events
+    const eventsRef = db.collection("users").doc(uid).collection("calendar_events");
+    const eventsSnapshot = await eventsRef.get();
+
+    const allEvents: Array<{start: Date; end: Date; title: string}> = [];
+    
+    eventsSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.start && data.end) {
+        const startDate = new Date(data.start);
+        const endDate = new Date(data.end);
+        if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+          allEvents.push({
+            start: startDate,
+            end: endDate,
+            title: data.title || 'Event'
+          });
+        }
+      }
+    });
+
+    console.log(`Found ${allEvents.length} existing calendar events`);
+
+    // Sort events by start time
+    allEvents.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+    // Helper function to check if a time slot conflicts with existing events
+    const hasConflict = (slotStart: Date, slotEnd: Date): boolean => {
+      for (const event of allEvents) {
+        if (slotStart < event.end && slotEnd > event.start) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    // Helper to format date as YYYY-MM-DD
+    const formatDate = (d: Date): string => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    // Helper to format time as HH:MM
+    const formatTime = (hour: number, minute: number = 0): string => {
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    };
+
+    // Working hours: 9 AM to 10 PM
+    const WORK_START_HOUR = 9;
+    const WORK_END_HOUR = 22;
+    
+    // Get current hour in user's local time
+    const currentLocalHour = nowLocal.getUTCHours();
+    
+    let foundSlot = false;
+    let resultDate = "";
+    let resultStartTime = "";
+    let resultEndTime = "";
+    let reason = "";
+
+    // Search for the next 14 days
+    for (let dayOffset = 0; dayOffset < 14 && !foundSlot; dayOffset++) {
+      const checkDate = new Date(nowLocal);
+      checkDate.setUTCDate(nowLocal.getUTCDate() + dayOffset);
+      
+      // Skip weekends (0 = Sunday, 6 = Saturday)
+      const dayOfWeek = checkDate.getUTCDay();
+      if (dayOfWeek === 0 || dayOfWeek === 6) {
+        continue;
+      }
+
+      // Determine start hour for this day
+      let startHour = WORK_START_HOUR;
+      if (dayOffset === 0) {
+        // Today - start from next available hour
+        startHour = Math.max(WORK_START_HOUR, currentLocalHour + 1);
+      }
+
+      // Try each hour from start to 10 PM
+      for (let hour = startHour; hour <= WORK_END_HOUR - 1 && !foundSlot; hour++) {
+        // Calculate end hour based on duration
+        const endMinutes = hour * 60 + duration;
+        const endHour = Math.floor(endMinutes / 60);
+        const endMin = endMinutes % 60;
+        
+        // Make sure slot doesn't extend past 10 PM
+        if (endHour > WORK_END_HOUR || (endHour === WORK_END_HOUR && endMin > 0)) {
+          continue;
+        }
+        
+        // Create slot times for conflict checking (in UTC for comparison with stored events)
+        const slotStartUTC = new Date(checkDate);
+        slotStartUTC.setUTCHours(hour, 0, 0, 0);
+        // Convert local time back to UTC for comparison
+        const slotStartForCheck = new Date(slotStartUTC.getTime() + offsetMs);
+        
+        const slotEndUTC = new Date(slotStartUTC);
+        slotEndUTC.setUTCMinutes(slotEndUTC.getUTCMinutes() + duration);
+        const slotEndForCheck = new Date(slotEndUTC.getTime() + offsetMs);
+        
+        // Check if this slot is available
+        if (!hasConflict(slotStartForCheck, slotEndForCheck)) {
+          foundSlot = true;
+          
+          // Format the result in user's local time
+          resultDate = formatDate(checkDate);
+          resultStartTime = formatTime(hour);
+          resultEndTime = formatTime(endHour, endMin);
+          
+          // Generate a reason
+          const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+          const dayName = dayNames[dayOfWeek];
+          const timeStr = hour <= 12 ? `${hour}:00 AM` : `${hour - 12}:00 PM`;
+          
+          if (dayOffset === 0) {
+            reason = `First available slot today at ${timeStr}`;
+          } else if (dayOffset === 1) {
+            reason = `First available slot tomorrow at ${timeStr}`;
+          } else {
+            reason = `First available slot on ${dayName} at ${timeStr}`;
+          }
+          
+          if (hour >= 9 && hour < 12) {
+            reason += " - great time for focused work";
+          } else if (hour >= 14 && hour < 17) {
+            reason += " - ideal for meetings and collaboration";
+          }
+          
+          console.log(`Found available slot: ${resultDate} ${resultStartTime} - ${resultEndTime}`);
+          break;
+        }
+      }
+    }
+
+    // If no slot found, default to tomorrow at 10 AM
+    if (!foundSlot) {
+      console.log("No available slots found, using default (tomorrow 10 AM)");
+      const tomorrow = new Date(nowLocal);
+      tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+      
+      resultDate = formatDate(tomorrow);
+      resultStartTime = "10:00";
+      const endHour = Math.floor((10 * 60 + duration) / 60);
+      const endMin = (10 * 60 + duration) % 60;
+      resultEndTime = formatTime(endHour, endMin);
+      reason = "Suggested tomorrow morning at 10:00 AM - great time for focused work";
+    }
+
+    console.log(`Returning: ${resultDate} ${resultStartTime} - ${resultEndTime}`);
+
+    res.json({
+      success: true,
+      data: {
+        startDate: resultDate,
+        startTime: resultStartTime,
+        endDate: resultDate,
+        endTime: resultEndTime,
+        reason: reason
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Error suggesting time:", error);
+    
+    // On error, return tomorrow at 10 AM
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const year = tomorrow.getFullYear();
+    const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+    const day = String(tomorrow.getDate()).padStart(2, '0');
+    
+    res.json({
+      success: true,
+      data: {
+        startDate: `${year}-${month}-${day}`,
+        startTime: "10:00",
+        endDate: `${year}-${month}-${day}`,
+        endTime: "11:00",
+        reason: "Suggested tomorrow morning at 10:00 AM"
+      }
+    });
+  }
+});
+
+/**
+ * POST /calendars/events
+ * Create a new calendar event
+ */
+router.post("/events", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const { title, description, start, end, location, taskId } = req.body;
+
+    if (!title || !start || !end) {
+      res.status(400).json({ 
+        success: false, 
+        error: "Title, start, and end are required" 
+      });
+      return;
+    }
+
+    const eventId = `zeitline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const eventData = {
+      id: eventId,
+      title,
+      description: description || "",
+      start,
+      end,
+      location: location || null,
+      calendarType: "zeitline",
+      calendarName: "Zeitline",
+      source: "task",
+      taskId: taskId || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Save to Firestore
+    await db.collection("users").doc(uid)
+      .collection("calendar_events").doc(eventId)
+      .set(eventData);
+
+    // If taskId provided, update the task to mark it as added to calendar
+    if (taskId) {
+      const taskListRef = db.collection("users").doc(uid)
+        .collection("taskLists").doc("master");
+      
+      const taskListDoc = await taskListRef.get();
+      if (taskListDoc.exists) {
+        const tasks = taskListDoc.data()?.tasks || [];
+        const updatedTasks = tasks.map((t: any) => 
+          t.id === taskId ? { ...t, addedToCalendar: true, calendarEventId: eventId } : t
+        );
+        await taskListRef.update({ tasks: updatedTasks });
+      }
+    }
+
+    console.log(`✅ Created calendar event: ${title} for user ${uid}`);
+
+    res.json({
+      success: true,
+      data: {
+        event: eventData
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Error creating calendar event:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to create event"
+    });
   }
 });
 

@@ -808,6 +808,13 @@
                     </svg>
                     Calendar
                 </a>
+                <a href="/events.html" class="nav-item">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 11l3 3L22 4"/>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                    </svg>
+                    Events & Tasks
+                </a>
                 <a href="/recordings.html" class="nav-item active">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -978,39 +985,46 @@
                                 <div class="transcript-actions">
                                     <button id="copyTranscriptBtn">Copy</button>
                                     <button id="downloadTranscriptBtn">Download</button>
+                                    <button id="retranscribeBtn" title="Re-transcribe with OpenAI Whisper for better accuracy">🔄 Re-transcribe</button>
                                 </div>
                             </div>
                             <div class="transcript-content" id="transcriptContent">
                                 <div class="no-transcript" id="noTranscript">
                                     <div class="no-transcript-icon">📝</div>
                                     <p>No transcript available</p>
+                                    <p style="font-size: 0.75rem; opacity: 0.7; margin-top: 0.5rem;">
+                                        Powered by OpenAI Whisper for superior accuracy
+                                    </p>
                                     <button class="btn btn-secondary" style="margin-top: 1rem; font-size: 0.8rem; padding: 0.5rem 1rem;" id="transcribeBtn">
-                                        Transcribe Now
+                                        🎤 Transcribe with AI
                                     </button>
                                 </div>
                                 <div id="transcriptText" style="display: none;"></div>
                             </div>
+                            <div id="transcriptionStatus" style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; display: none;">
+                                <span id="transcriptionModel"></span>
+                            </div>
                         </div>
                         
-                        <!-- AI Task Extraction Section -->
+                        <!-- AI Task Extraction Section (Auto-extracted) -->
                         <div class="tasks-section" style="margin-top: 1.5rem;">
                             <div class="transcript-header">
                                 <h3>🤖 AI Extracted Tasks</h3>
                                 <div class="transcript-actions">
-                                    <button id="extractTasksBtn" class="extract-tasks-btn">Extract Tasks</button>
+                                    <span id="extractionStatus" style="font-size: 0.75rem; color: var(--text-muted);">Auto-extracted</span>
                                 </div>
                             </div>
                             <div class="extracted-tasks-content" id="extractedTasksContent">
                                 <div class="no-tasks" id="noTasks">
                                     <div class="no-transcript-icon">📋</div>
-                                    <p>No tasks extracted yet</p>
-                                    <p style="font-size: 0.75rem; opacity: 0.7;">Click "Extract Tasks" to analyze this recording with AI</p>
+                                    <p>No tasks found</p>
+                                    <p style="font-size: 0.75rem; opacity: 0.7;">Tasks are automatically extracted after transcription</p>
                                 </div>
                                 <div id="extractedTasksList" style="display: none;"></div>
                             </div>
                         </div>
                         
-                        <!-- Conversation Points Section -->
+                        <!-- Conversation Points Section (Auto-extracted) -->
                         <div class="conversation-section" style="margin-top: 1.5rem;">
                             <div class="transcript-header">
                                 <h3>💬 Discussion Points</h3>
@@ -1018,7 +1032,7 @@
                             <div class="conversation-points-content" id="conversationPointsContent">
                                 <div class="no-points" id="noPoints">
                                     <p style="text-align: center; color: var(--text-muted); padding: 1rem;">
-                                        Discussion points will appear after task extraction
+                                        Points are automatically extracted after transcription
                                     </p>
                                 </div>
                                 <div id="conversationPointsList" style="display: none;"></div>

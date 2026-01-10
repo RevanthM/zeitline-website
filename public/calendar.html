@@ -34,6 +34,9 @@
             margin-bottom: 1.5rem;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         
         .calendar-section:hover {
@@ -242,11 +245,21 @@
             overflow: hidden;
         }
         
+        #monthViewContainer {
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
+            box-sizing: border-box;
+        }
+        
         .calendar-weekdays {
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 0;
+            margin-bottom: 0;
+            width: 100%;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         
         .calendar-grid-container.day-view-active .calendar-day,
@@ -360,8 +373,12 @@
         
         .calendar-grid {
             display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 0.5rem;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 0;
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
+            box-sizing: border-box;
         }
         
         .calendar-grid.week-view {
@@ -1039,9 +1056,11 @@
             cursor: pointer;
             transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             position: relative;
+            overflow: hidden;
+            box-sizing: border-box;
         }
         
-        .calendar-day:last-child {
+        .calendar-day:nth-child(7n) {
             border-right: none;
         }
         
@@ -1131,6 +1150,8 @@
             margin-top: 2px;
             max-height: calc(100% - 24px);
             overflow: hidden;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         
         .month-view-event {
@@ -1200,6 +1221,8 @@
             margin-top: 2px;
             flex: 1;
             overflow: hidden;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         
         .event-dot {
@@ -1217,6 +1240,8 @@
             border-radius: 3px;
             background: transparent;
             overflow: hidden;
+            max-width: 100%;
+            box-sizing: border-box;
             text-overflow: ellipsis;
             white-space: nowrap;
             cursor: pointer;
@@ -2032,20 +2057,12 @@
                     </svg>
                     Calendar
                 </a>
-                <a href="/timeline.html" class="nav-item">
+                <a href="/events.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/>
-                        <polygon points="10 8 16 12 10 16 10 8"/>
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
                     </svg>
-                    Predictions
-                </a>
-                <a href="#" class="nav-item">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="18" y1="20" x2="18" y2="10"/>
-                        <line x1="12" y1="20" x2="12" y2="4"/>
-                        <line x1="6" y1="20" x2="6" y2="14"/>
-                    </svg>
-                    Insights
+                    Events & Tasks
                 </a>
                 <a href="/recordings.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -2119,16 +2136,6 @@
             <!-- Calendar Section -->
             <div class="calendar-section">
                 <div class="calendar-header">
-                    <!-- Temporary test button - remove after testing -->
-                    <div style="margin-bottom: 1rem; padding: 0.75rem; background: rgba(201, 255, 87, 0.1); border: 1px solid rgba(201, 255, 87, 0.3); border-radius: 8px; text-align: center;">
-                        <button onclick="window.location.href='/test-onboarding-to-calendar.html'" 
-                                style="background: #c9ff57; color: #0a0a0a; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.875rem;">
-                            🧪 Test Onboarding → Calendar
-                        </button>
-                        <p style="margin: 0.5rem 0 0 0; font-size: 0.75rem; color: var(--text-secondary);">
-                            Temporary test button - click to test calendar population from onboarding data
-                        </p>
-                    </div>
                     <div class="calendar-header-top">
                         <h2 class="calendar-title" id="calendarTitle">January 2025</h2>
                         <div class="calendar-nav">
@@ -2486,7 +2493,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/js/firebase-config.js?v=2.1"></script>
-    <script src="/js/calendar.js?v=8.4"></script>
+    <script src="/js/calendar.js?v=8.6"></script>
 </body>
 </html>
 
