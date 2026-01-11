@@ -229,6 +229,10 @@ async function handleSignIn(event) {
 async function handleGoogleSignIn() {
   try {
     showLoading("Signing in with Google...");
+    
+    // Clear any stayOnLoginPage flag that might have been set during logout
+    sessionStorage.removeItem('stayOnLoginPage');
+    
     const user = await signInWithGoogle();
 
     // Check if this is a new user
@@ -275,7 +279,14 @@ async function handleGoogleSignIn() {
     }
 
     hideLoading();
-    // Auth observer will redirect
+    
+    // Explicitly redirect after successful login (don't rely on auth observer alone)
+    // This ensures redirect happens even if the stayOnLoginPage flag was set during logout
+    if (isNewUser || !hasCompletedOnboarding()) {
+      window.location.href = "/onboarding-chat.html?mode=new";
+    } else {
+      window.location.href = "/dashboard.html";
+    }
   } catch (error) {
     hideLoading();
     console.error("Google sign in error:", error);
@@ -287,6 +298,10 @@ async function handleGoogleSignIn() {
 async function handleAppleSignIn() {
   try {
     showLoading("Signing in with Apple...");
+    
+    // Clear any stayOnLoginPage flag that might have been set during logout
+    sessionStorage.removeItem('stayOnLoginPage');
+    
     const user = await signInWithApple();
 
     const token = await user.getIdToken();
@@ -329,6 +344,13 @@ async function handleAppleSignIn() {
     }
 
     hideLoading();
+    
+    // Explicitly redirect after successful login
+    if (isNewUser || !hasCompletedOnboarding()) {
+      window.location.href = "/onboarding-chat.html?mode=new";
+    } else {
+      window.location.href = "/dashboard.html";
+    }
   } catch (error) {
     hideLoading();
     console.error("Apple sign in error:", error);
