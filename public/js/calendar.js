@@ -3198,6 +3198,7 @@ window.analyzeExistingEvents = async function() {
     }
 };
 
+// Fix overlapping events
 // Initialize AI Assistant on page load
 document.addEventListener('DOMContentLoaded', () => {
     // Add "Analyze Calendar" button to AI suggestions

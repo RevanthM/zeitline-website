@@ -3198,6 +3198,55 @@ window.analyzeExistingEvents = async function() {
     }
 };
 
+// Fix overlapping events
+async function fixOverlappingEvents() {
+    const btn = document.getElementById('fixOverlapsBtn');
+    const btnText = document.getElementById('fixOverlapsBtnText');
+    
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    btnText.textContent = 'Checking...';
+    
+    try {
+        const user = firebase.auth().currentUser;
+        if (!user) throw new Error('Not logged in');
+        
+        const token = await user.getIdToken();
+        const timezoneOffset = new Date().getTimezoneOffset();
+        
+        const response = await fetch('/api/calendars/fix-overlaps', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                timezoneOffset: timezoneOffset
+            })
+        });
+        
+        if (!response.ok) throw new Error('Failed to fix overlaps');
+        
+        const result = await response.json();
+        
+        if (result.data.overlapsFixed > 0) {
+            showSuccess(`✅ Fixed ${result.data.overlapsFixed} overlapping events!`);
+            // Reload calendar to show changes
+            await loadCalendarEvents();
+        } else {
+            showSuccess('✅ No overlapping events found!');
+        }
+        
+    } catch (error) {
+        console.error('Error fixing overlaps:', error);
+        showError('Failed to fix overlaps: ' + error.message);
+    } finally {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btnText.textContent = 'Fix Overlaps';
+    }
+}
+
 // Initialize AI Assistant on page load
 document.addEventListener('DOMContentLoaded', () => {
     // Add "Analyze Calendar" button to AI suggestions

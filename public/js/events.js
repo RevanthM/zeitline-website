@@ -704,9 +704,13 @@ async function autoAddAllToCalendar() {
         let addedCount = 0;
         let failedCount = 0;
         
+        // Track slots we've already used in this session to prevent overlaps
+        const usedSlots = [];
+        
         for (const task of tasksToAdd) {
             try {
                 // First, get AI time suggestion for this task
+                // Pass already used slots to avoid overlaps
                 const suggestResponse = await fetch('/api/calendars/suggest-time', {
                     method: 'POST',
                     headers: {
@@ -718,7 +722,8 @@ async function autoAddAllToCalendar() {
                         taskDetails: task.details,
                         taskDuration: 60,
                         preferredDate: task.suggestedDate,
-                        timezoneOffset: timezoneOffset
+                        timezoneOffset: timezoneOffset,
+                        excludeSlots: usedSlots // Pass already scheduled slots
                     })
                 });
                 
@@ -728,11 +733,14 @@ async function autoAddAllToCalendar() {
                 const suggestion = suggestResult.data;
                 
                 // Build event data
+                const startDateTime = `${suggestion.startDate}T${suggestion.startTime}:00`;
+                const endDateTime = `${suggestion.endDate}T${suggestion.endTime}:00`;
+                
                 const eventData = {
                     title: task.title,
                     description: task.details || '',
-                    start: `${suggestion.startDate}T${suggestion.startTime}:00`,
-                    end: `${suggestion.endDate}T${suggestion.endTime}:00`,
+                    start: startDateTime,
+                    end: endDateTime,
                     location: task.location || '',
                     taskId: task.id
                 };
@@ -748,6 +756,12 @@ async function autoAddAllToCalendar() {
                 });
                 
                 if (!createResponse.ok) throw new Error('Failed to create event');
+                
+                // Track this slot as used to prevent overlaps
+                usedSlots.push({
+                    start: startDateTime,
+                    end: endDateTime
+                });
                 
                 // Update local task
                 task.addedToCalendar = true;

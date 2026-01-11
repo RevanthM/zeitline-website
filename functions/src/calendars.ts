@@ -2036,7 +2036,7 @@ router.post("/populate-from-onboarding", verifyAuth, async (req: Request, res: R
 router.post("/suggest-time", verifyAuth, async (req: Request, res: Response) => {
   try {
     const uid = req.user!.uid;
-    const { taskTitle, taskDuration, timezoneOffset } = req.body;
+    const { taskTitle, taskDuration, timezoneOffset, excludeSlots } = req.body;
 
     // Default duration to 60 minutes if not specified
     const duration = taskDuration || 60;
@@ -2073,7 +2073,25 @@ router.post("/suggest-time", verifyAuth, async (req: Request, res: Response) => 
       }
     });
 
-    console.log(`Found ${allEvents.length} existing calendar events`);
+    // Also add excluded slots (events we just scheduled in this session but not yet in DB)
+    if (excludeSlots && Array.isArray(excludeSlots)) {
+      console.log(`Adding ${excludeSlots.length} excluded slots from current session`);
+      for (const slot of excludeSlots) {
+        if (slot.start && slot.end) {
+          const startDate = new Date(slot.start);
+          const endDate = new Date(slot.end);
+          if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+            allEvents.push({
+              start: startDate,
+              end: endDate,
+              title: 'Reserved (just scheduled)'
+            });
+          }
+        }
+      }
+    }
+
+    console.log(`Found ${allEvents.length} total events to avoid (including ${excludeSlots?.length || 0} just scheduled)`);
 
     // Sort events by start time
     allEvents.sort((a, b) => a.start.getTime() - b.start.getTime());
@@ -2306,6 +2324,235 @@ router.post("/events", verifyAuth, async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error.message || "Failed to create event"
+    });
+  }
+});
+
+/**
+ * POST /calendars/fix-overlaps
+ * Find and fix overlapping Zeitline events by rescheduling them
+ * Considers ALL calendar events (Google, Apple, Outlook, Zeitline) when finding conflicts
+ */
+router.post("/fix-overlaps", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const { timezoneOffset } = req.body;
+    
+    const offsetMs = (timezoneOffset || 0) * 60 * 1000;
+    const nowUTC = new Date();
+    const nowLocal = new Date(nowUTC.getTime() - offsetMs);
+
+    console.log(`Checking for overlapping events for user ${uid}`);
+
+    // Fetch ALL calendar events (Zeitline + Google + Apple + Outlook)
+    const eventsRef = db.collection("users").doc(uid).collection("calendar_events");
+    const allEventsSnapshot = await eventsRef.get();
+
+    interface CalendarEvent {
+      id: string;
+      start: Date;
+      end: Date;
+      title: string;
+      calendarType: string;
+      docRef: FirebaseFirestore.DocumentReference | null;
+      isZeitline: boolean;
+    }
+
+    const allEvents: CalendarEvent[] = [];
+    const zeitlineEvents: CalendarEvent[] = [];
+    
+    allEventsSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.start && data.end) {
+        const startDate = new Date(data.start);
+        const endDate = new Date(data.end);
+        if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+          const event: CalendarEvent = {
+            id: doc.id,
+            start: startDate,
+            end: endDate,
+            title: data.title || 'Event',
+            calendarType: data.calendarType || 'unknown',
+            docRef: doc.ref,
+            isZeitline: data.calendarType === 'zeitline'
+          };
+          allEvents.push(event);
+          if (event.isZeitline) {
+            zeitlineEvents.push(event);
+          }
+        }
+      }
+    });
+
+    console.log(`Found ${allEvents.length} total events (${zeitlineEvents.length} Zeitline, ${allEvents.length - zeitlineEvents.length} external)`);
+
+    // Sort by start time
+    allEvents.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+    // Find Zeitline events that overlap with ANY other event (including external calendars)
+    const overlappingZeitlineEvents = new Set<string>();
+    const overlaps: Array<{zeitlineEvent: CalendarEvent; conflictsWith: CalendarEvent}> = [];
+    
+    for (const zeitlineEvent of zeitlineEvents) {
+      for (const otherEvent of allEvents) {
+        // Don't compare with itself
+        if (zeitlineEvent.id === otherEvent.id) continue;
+        
+        // Check if they overlap
+        if (zeitlineEvent.start < otherEvent.end && zeitlineEvent.end > otherEvent.start) {
+          overlaps.push({ zeitlineEvent, conflictsWith: otherEvent });
+          overlappingZeitlineEvents.add(zeitlineEvent.id);
+        }
+      }
+    }
+
+    console.log(`Found ${overlaps.length} overlaps involving Zeitline events`);
+
+    if (overlaps.length === 0) {
+      res.json({
+        success: true,
+        data: {
+          message: "No overlapping events found!",
+          overlapsFixed: 0
+        }
+      });
+      return;
+    }
+
+    // Collect unique Zeitline events that need to be rescheduled
+    const eventsToReschedule = Array.from(overlappingZeitlineEvents);
+    console.log(`Need to reschedule ${eventsToReschedule.length} Zeitline events`);
+
+    // Helper functions
+    const formatDate = (d: Date): string => {
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    const formatTime = (hour: number, minute: number = 0): string => {
+      return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    };
+
+    // Build list of fixed events (ALL events not being rescheduled - includes external calendars)
+    const fixedEvents: Array<{start: Date; end: Date; title: string}> = allEvents
+      .filter(e => !eventsToReschedule.includes(e.id))
+      .map(e => ({ start: e.start, end: e.end, title: e.title }));
+
+    console.log(`Fixed events to avoid: ${fixedEvents.length} (including ${allEvents.length - zeitlineEvents.length} from external calendars)`);
+
+    // Reschedule each conflicting Zeitline event
+    let rescheduledCount = 0;
+    const WORK_START_HOUR = 9;
+    const WORK_END_HOUR = 22;
+
+    for (const eventId of eventsToReschedule) {
+      const event = zeitlineEvents.find(e => e.id === eventId);
+      if (!event || !event.docRef) continue;
+
+      // Calculate duration
+      const durationMs = event.end.getTime() - event.start.getTime();
+      const durationMins = Math.max(60, Math.round(durationMs / 60000)); // At least 60 mins
+
+      // Find next available slot
+      let foundSlot = false;
+      let newStartDate = "";
+      let newStartTime = "";
+      let newEndTime = "";
+
+      // Start searching from today
+      for (let dayOffset = 0; dayOffset < 30 && !foundSlot; dayOffset++) {
+        const checkDate = new Date(nowLocal);
+        checkDate.setUTCDate(nowLocal.getUTCDate() + dayOffset);
+        
+        // Skip weekends
+        const dayOfWeek = checkDate.getUTCDay();
+        if (dayOfWeek === 0 || dayOfWeek === 6) continue;
+
+        // Determine start hour for this day
+        let startHour = WORK_START_HOUR;
+        if (dayOffset === 0) {
+          startHour = Math.max(WORK_START_HOUR, nowLocal.getUTCHours() + 1);
+        }
+
+        // Try each hour
+        for (let hour = startHour; hour <= WORK_END_HOUR - 1 && !foundSlot; hour++) {
+          const endMinutes = hour * 60 + durationMins;
+          const endHour = Math.floor(endMinutes / 60);
+          const endMin = endMinutes % 60;
+
+          if (endHour > WORK_END_HOUR || (endHour === WORK_END_HOUR && endMin > 0)) continue;
+
+          // Create slot times for checking
+          const slotStart = new Date(checkDate);
+          slotStart.setUTCHours(hour, 0, 0, 0);
+          const slotStartForCheck = new Date(slotStart.getTime() + offsetMs);
+
+          const slotEnd = new Date(slotStart);
+          slotEnd.setUTCMinutes(slotEnd.getUTCMinutes() + durationMins);
+          const slotEndForCheck = new Date(slotEnd.getTime() + offsetMs);
+
+          // Check for conflicts with fixed events
+          let hasConflict = false;
+          for (const fixed of fixedEvents) {
+            if (slotStartForCheck < fixed.end && slotEndForCheck > fixed.start) {
+              hasConflict = true;
+              break;
+            }
+          }
+
+          if (!hasConflict) {
+            foundSlot = true;
+            newStartDate = formatDate(checkDate);
+            newStartTime = formatTime(hour);
+            newEndTime = formatTime(endHour, endMin);
+
+            // Add this to fixed events so subsequent events don't overlap
+            fixedEvents.push({
+              start: slotStartForCheck,
+              end: slotEndForCheck,
+              title: event.title
+            });
+          }
+        }
+      }
+
+      if (foundSlot) {
+        // Update the event in Firestore
+        const newStart = `${newStartDate}T${newStartTime}:00`;
+        const newEnd = `${newStartDate}T${newEndTime}:00`;
+
+        await event.docRef.update({
+          start: newStart,
+          end: newEnd,
+          updatedAt: new Date().toISOString(),
+          rescheduledAt: new Date().toISOString(),
+          rescheduledReason: "Overlap fix"
+        });
+
+        console.log(`Rescheduled "${event.title}" to ${newStart} - ${newEnd}`);
+        rescheduledCount++;
+      } else {
+        console.warn(`Could not find slot for "${event.title}"`);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        message: `Fixed ${rescheduledCount} overlapping events`,
+        overlapsFound: overlaps.length,
+        overlapsFixed: rescheduledCount,
+        eventsRescheduled: Array.from(eventsToReschedule)
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Error fixing overlaps:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to fix overlaps"
     });
   }
 });

@@ -779,11 +779,31 @@ router.post("/:recordingId/convert", verifyAuth, async (req: Request, res: Respo
 async function downloadAudioFile(url: string, filename: string): Promise<string> {
   const tempDir = os.tmpdir();
   
-  // Get file extension from filename or default to m4a
-  const ext = path.extname(filename) || ".m4a";
+  // Try to get extension from URL first (more reliable), then filename
+  let ext = ".m4a"; // default
+  
+  // Check URL for extension
+  const urlPath = new URL(url).pathname;
+  const urlExt = path.extname(urlPath);
+  if (urlExt && [".m4a", ".wav", ".mp3", ".mp4", ".ogg", ".flac", ".webm"].includes(urlExt.toLowerCase())) {
+    ext = urlExt.toLowerCase();
+  } else if (filename) {
+    const filenameExt = path.extname(filename);
+    if (filenameExt) {
+      ext = filenameExt.toLowerCase();
+    }
+  }
+  
+  // Map CAF to WAV since Whisper doesn't support CAF
+  if (ext === ".caf") {
+    console.log("⚠️ CAF format detected, this may not transcribe properly");
+    ext = ".caf"; // Keep as-is but warn
+  }
+  
   const tempFilePath = path.join(tempDir, `audio_${Date.now()}${ext}`);
 
-  console.log(`Downloading audio from ${url.substring(0, 50)}... to ${tempFilePath}`);
+  console.log(`📥 Downloading audio from ${url.substring(0, 80)}...`);
+  console.log(`   Extension: ${ext}, Target: ${tempFilePath}`);
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -796,18 +816,28 @@ async function downloadAudioFile(url: string, filename: string): Promise<string>
   fs.writeFileSync(tempFilePath, buffer);
 
   const stats = fs.statSync(tempFilePath);
-  console.log(`Downloaded ${stats.size} bytes to ${tempFilePath}`);
+  console.log(`✅ Downloaded ${stats.size} bytes to ${tempFilePath}`);
 
   return tempFilePath;
 }
 
 /**
  * Transcribe audio file using OpenAI Whisper API
+ * Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm
  */
 async function transcribeWithWhisper(filePath: string): Promise<string> {
   const openai = getOpenAIClient();
 
+  const fileExt = path.extname(filePath).toLowerCase();
+  const supportedFormats = [".flac", ".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".ogg", ".wav", ".webm"];
+  
   console.log(`🎤 Transcribing with Whisper: ${filePath}`);
+  console.log(`   File extension: ${fileExt}`);
+
+  // Warn if format might not be supported
+  if (!supportedFormats.includes(fileExt)) {
+    console.log(`⚠️ Format ${fileExt} may not be supported by Whisper. Supported: ${supportedFormats.join(", ")}`);
+  }
 
   // Check file exists and has content
   const stats = fs.statSync(filePath);
@@ -815,7 +845,12 @@ async function transcribeWithWhisper(filePath: string): Promise<string> {
     throw new Error("Audio file is empty");
   }
 
-  console.log(`Audio file size: ${stats.size} bytes`);
+  console.log(`   File size: ${stats.size} bytes`);
+
+  // Minimum file size check (very short files might fail)
+  if (stats.size < 1000) {
+    console.log(`⚠️ File is very small (${stats.size} bytes), may not contain enough audio`);
+  }
 
   // Create a readable stream for the file
   const fileStream = fs.createReadStream(filePath);
@@ -830,21 +865,30 @@ async function transcribeWithWhisper(filePath: string): Promise<string> {
       prompt: "This is a voice memo or conversation recording. It may contain names, dates, tasks, meetings, and personal notes.",
     });
 
-    console.log(`✅ Whisper transcription complete`);
+    const transcript = typeof response === "string" ? response : (response as any).text || "";
+    
+    if (transcript && transcript.trim().length > 0) {
+      console.log(`✅ Whisper transcription complete: "${transcript.substring(0, 100)}..."`);
+    } else {
+      console.log(`⚠️ Whisper returned empty transcript for ${fileExt} file of ${stats.size} bytes`);
+    }
 
-    // response is a string when response_format is "text"
-    return typeof response === "string" ? response : (response as any).text || "";
+    return transcript;
 
   } catch (error: any) {
-    console.error("Whisper API error:", error);
-    
+    console.error("❌ Whisper API error:", error.message || error);
+
     // Check for specific error types
-    if (error.message?.includes("Invalid file format")) {
-      throw new Error("Invalid audio format. Please ensure the audio file is in a supported format (m4a, mp3, wav, etc.)");
+    if (error.message?.includes("Invalid file format") || error.message?.includes("could not be decoded")) {
+      throw new Error(`Invalid audio format (${fileExt}). Whisper supports: ${supportedFormats.join(", ")}`);
+    }
+
+    if (error.message?.includes("File is too short") || error.message?.includes("too short")) {
+      throw new Error("Audio file is too short for transcription (minimum ~0.1 seconds needed)");
     }
     
-    if (error.message?.includes("File is too short")) {
-      throw new Error("Audio file is too short for transcription");
+    if (error.message?.includes("Could not process audio")) {
+      throw new Error(`Could not process audio file. The file may be corrupted or in an unsupported format (${fileExt})`);
     }
 
     throw error;

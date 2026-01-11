@@ -65,37 +65,40 @@ router.post("/extract", verifyAuth, async (req: Request, res: Response): Promise
 
     const prompt = `You are an AI assistant that analyzes voice memo transcripts to extract actionable items.
 
-IMPORTANT: This is a voice memo recorded by the user. Extract:
-1. ALL discussion points and topics mentioned
-2. ALL tasks, to-dos, and action items - these are things the user needs to do, was told to do, or mentioned they should do
+CRITICAL RULES:
+1. ONLY extract items that are EXPLICITLY mentioned in the transcript
+2. NEVER create placeholder, example, sample, or test tasks
+3. If the transcript has no clear tasks or discussion points, return EMPTY arrays
+4. Do NOT invent or make up any content - only use what is actually said
 
-Be thorough! If someone says "you need to do X" or "get X done by Y" or "I need to X" - these are tasks.
+This is a voice memo recorded by the user. Extract:
+1. Discussion points and topics that are ACTUALLY mentioned
+2. Tasks, to-dos, and action items - ONLY if explicitly stated (e.g., "you need to do X", "get X done by Y", "I need to X")
 
-For conversation_points, include:
-- content: What was discussed
+For conversation_points (ONLY if actually discussed):
+- content: What was discussed (exact or close paraphrase)
 - type: user_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
 - speaker: Who said it (if identifiable, otherwise null)
 - mentionedPeople: Array of people mentioned
 - mentionedDateTime: ISO date string if a date/time was mentioned, null otherwise
 - location: Location if mentioned, null otherwise
 
-For user_tasks (action items the user needs to complete):
-- title: Clear, actionable task title
-- details: Additional context or requirements
+For user_tasks (ONLY if explicitly stated as something to do):
+- title: Clear, actionable task title from the transcript
+- details: Additional context from the transcript
 - location: Where it needs to be done (if mentioned)
 - participants: People involved
 - suggestedDateTime: ISO date string if deadline mentioned (e.g., "Tuesday" = next Tuesday), null otherwise
 - priority: 1 (high), 2 (medium), 3 (low) based on urgency
 - category: work, personal, meeting, call, errand, health, other
 
+IMPORTANT: If the transcript is empty, unclear, just noise, or contains no actionable content, return:
+{"conversation_points": [], "user_tasks": []}
+
 Return ONLY valid JSON:
 {
-  "conversation_points": [
-    {"content": "...", "type": "user_task", "speaker": null, "mentionedPeople": [], "mentionedDateTime": null, "location": null}
-  ],
-  "user_tasks": [
-    {"title": "...", "details": "...", "location": null, "participants": [], "suggestedDateTime": null, "priority": 2, "category": "work"}
-  ]
+  "conversation_points": [],
+  "user_tasks": []
 }
 
 Voice memo transcript:
