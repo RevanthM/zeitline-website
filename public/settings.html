@@ -535,6 +535,7 @@
                     </div>
                 </div>
                 
+                <!-- Free users: Upgrade card -->
                 <div class="upgrade-card" id="upgradeCard">
                     <h3>Upgrade to Pro</h3>
                     <p>Unlock the full potential of Zeitline with advanced features.</p>
@@ -548,9 +549,33 @@
                     </ul>
                     
                     <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <div class="price-tag">$20<span>/month</span></div>
-                        <button class="btn btn-primary" onclick="handleUpgrade()">Upgrade Now</button>
+                        <div class="price-tag">$10<span>/month</span></div>
+                        <button class="btn btn-primary" id="upgradeBtn" onclick="handleUpgrade()">Upgrade Now</button>
                     </div>
+                </div>
+                
+                <!-- Pro users: Subscription management card -->
+                <div class="upgrade-card" id="proCard" style="display: none; border-color: var(--accent-secondary);">
+                    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+                        <span style="font-size: 1.5rem;">✨</span>
+                        <h3 style="margin: 0;">Pro Subscription Active</h3>
+                    </div>
+                    <p>Thank you for being a Pro member! You have access to all premium features.</p>
+                    
+                    <div style="background: var(--bg-elevated); border-radius: 12px; padding: 1rem; margin: 1rem 0;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="color: var(--text-muted);">Status</span>
+                            <span id="subscriptionStatus" style="color: var(--accent-secondary);">Active</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between;">
+                            <span style="color: var(--text-muted);">Renews on</span>
+                            <span id="renewalDate">-</span>
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-secondary" onclick="handleManageSubscription()" style="width: 100%;">
+                        Manage Subscription
+                    </button>
                 </div>
                 
                 <div class="settings-section danger-zone" style="margin-top: 2rem;">
@@ -1645,8 +1670,151 @@
             setTimeout(() => toast.remove(), 3000);
         }
         
+        // Stripe Integration
         async function handleUpgrade() {
-            alert('Checkout is not available in demo mode. This would redirect to Stripe in production.');
+            const user = firebase.auth().currentUser;
+            
+            if (!user) {
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            const btn = document.getElementById('upgradeBtn');
+            const originalText = btn.textContent;
+            
+            try {
+                btn.disabled = true;
+                btn.textContent = 'Loading...';
+                
+                const token = await user.getIdToken();
+                
+                const response = await fetch('https://us-central1-zeitlineai.cloudfunctions.net/api/stripe/create-checkout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        successUrl: window.location.origin + '/settings.html?upgraded=true',
+                        cancelUrl: window.location.origin + '/settings.html?cancelled=true'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data.url) {
+                    window.location.href = data.data.url;
+                } else {
+                    throw new Error(data.error || 'Failed to create checkout session');
+                }
+            } catch (error) {
+                console.error('Checkout error:', error);
+                showToast('Unable to start checkout. Please try again.');
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+        
+        async function handleManageSubscription() {
+            const user = firebase.auth().currentUser;
+            
+            if (!user) {
+                window.location.href = '/login.html';
+                return;
+            }
+            
+            try {
+                const token = await user.getIdToken();
+                
+                const response = await fetch('https://us-central1-zeitlineai.cloudfunctions.net/api/stripe/create-portal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        returnUrl: window.location.origin + '/settings.html'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data.url) {
+                    window.location.href = data.data.url;
+                } else {
+                    throw new Error(data.error || 'Failed to open subscription portal');
+                }
+            } catch (error) {
+                console.error('Portal error:', error);
+                showToast('Unable to open subscription portal. Please try again.');
+            }
+        }
+        
+        async function loadSubscriptionStatus() {
+            const user = firebase.auth().currentUser;
+            if (!user) return;
+            
+            try {
+                const token = await user.getIdToken();
+                
+                const response = await fetch('https://us-central1-zeitlineai.cloudfunctions.net/api/stripe/subscription', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    updateSubscriptionUI(data.data);
+                }
+            } catch (error) {
+                console.error('Error loading subscription:', error);
+            }
+        }
+        
+        function updateSubscriptionUI(subscription) {
+            const planBadge = document.getElementById('planBadge');
+            const upgradeCard = document.getElementById('upgradeCard');
+            const proCard = document.getElementById('proCard');
+            
+            if (subscription.plan === 'pro' && subscription.hasSubscription) {
+                // Show Pro UI
+                planBadge.textContent = 'Pro Plan';
+                planBadge.className = 'plan-badge pro';
+                upgradeCard.style.display = 'none';
+                proCard.style.display = 'block';
+                
+                // Update status
+                const statusEl = document.getElementById('subscriptionStatus');
+                if (subscription.status === 'active') {
+                    statusEl.textContent = 'Active';
+                    statusEl.style.color = 'var(--accent-secondary)';
+                } else if (subscription.status === 'past_due') {
+                    statusEl.textContent = 'Past Due';
+                    statusEl.style.color = 'var(--accent-tertiary)';
+                } else {
+                    statusEl.textContent = subscription.status;
+                }
+                
+                // Update renewal date
+                if (subscription.currentPeriodEnd) {
+                    const renewDate = new Date(subscription.currentPeriodEnd._seconds * 1000);
+                    document.getElementById('renewalDate').textContent = renewDate.toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric'
+                    });
+                }
+            } else {
+                // Show Free UI
+                planBadge.textContent = 'Free Plan';
+                planBadge.className = 'plan-badge free';
+                upgradeCard.style.display = 'block';
+                proCard.style.display = 'none';
+            }
         }
         
         async function handleDeleteAccount() {
@@ -1661,10 +1829,20 @@
             }
         }
         
+        // Load subscription status when user is authenticated
+        firebase.auth().onAuthStateChanged((user) => {
+            if (user) {
+                loadSubscriptionStatus();
+            }
+        });
+        
         // Check for upgrade success
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('upgraded') === 'true') {
             showToast('🎉 Welcome to Pro! Your account has been upgraded.');
+            window.history.replaceState({}, document.title, '/settings.html');
+        } else if (urlParams.get('cancelled') === 'true') {
+            showToast('Checkout was cancelled.');
             window.history.replaceState({}, document.title, '/settings.html');
         }
     </script>

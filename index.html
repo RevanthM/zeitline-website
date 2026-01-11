@@ -1195,7 +1195,7 @@
             </div>
             <div class="pricing-card featured">
                 <div class="pricing-name">Pro</div>
-                <div class="pricing-price">$20 <span>/ month</span></div>
+                <div class="pricing-price">$10 <span>/ month</span></div>
                 <p class="pricing-description">Full power for those who want to master their time.</p>
                 <ul class="pricing-features">
                     <li>Unlimited activities</li>
@@ -1207,7 +1207,7 @@
                     <li>Export to CSV/PDF</li>
                     <li>Priority support</li>
                 </ul>
-                <a href="/signup.html" class="btn btn-primary">Start 14-Day Trial</a>
+                <button onclick="handleProUpgrade()" class="btn btn-primary">Start 14-Day Trial</button>
             </div>
         </div>
     </section>
@@ -1277,6 +1277,72 @@
                     }
                 }
             });
+        });
+        
+        // Handle Pro Upgrade - Stripe Checkout
+        async function handleProUpgrade() {
+            const user = firebase.auth().currentUser;
+            
+            if (!user) {
+                // Not logged in - save intent and redirect to signup
+                localStorage.setItem('zeitline_upgrade_intent', 'pro');
+                window.location.href = '/signup.html?upgrade=pro';
+                return;
+            }
+            
+            try {
+                // Show loading state
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.disabled = true;
+                btn.textContent = 'Loading...';
+                
+                // Get auth token
+                const token = await user.getIdToken();
+                
+                // Create Stripe Checkout session
+                const response = await fetch('https://us-central1-zeitlineai.cloudfunctions.net/api/stripe/create-checkout', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        successUrl: window.location.origin + '/settings.html?upgraded=true',
+                        cancelUrl: window.location.origin + '/#pricing'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success && data.data.url) {
+                    // Redirect to Stripe Checkout
+                    window.location.href = data.data.url;
+                } else {
+                    throw new Error(data.error || 'Failed to create checkout session');
+                }
+            } catch (error) {
+                console.error('Checkout error:', error);
+                alert('Unable to start checkout. Please try again or contact support.');
+                // Restore button
+                const btn = event.target;
+                btn.disabled = false;
+                btn.textContent = 'Start 14-Day Trial';
+            }
+        }
+        
+        // Check for upgrade intent after login
+        document.addEventListener('DOMContentLoaded', () => {
+            const upgradeIntent = localStorage.getItem('zeitline_upgrade_intent');
+            if (upgradeIntent === 'pro') {
+                firebase.auth().onAuthStateChanged((user) => {
+                    if (user) {
+                        localStorage.removeItem('zeitline_upgrade_intent');
+                        // Small delay to ensure auth is ready
+                        setTimeout(() => handleProUpgrade(), 500);
+                    }
+                });
+            }
         });
     </script>
 </body>
