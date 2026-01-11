@@ -42,3 +42,4 @@ js/test-account.js
 # Temporary files
 *.tmp
 *.log
+# Cache bust 1768114782
