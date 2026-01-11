@@ -3199,6 +3199,265 @@ window.analyzeExistingEvents = async function() {
 };
 
 // Fix overlapping events
+
+// =====================================================
+// Quick Create Event Modal Functions
+// =====================================================
+
+// Open the quick create event modal
+window.openQuickCreateModal = function(dateStr, timeMinutes) {
+    const modal = document.getElementById('quickCreateModal');
+    if (!modal) {
+        console.error('Quick create modal not found');
+        return;
+    }
+    
+    // Set default date to today or provided date
+    const dateInput = document.getElementById('quickCreateDate');
+    if (dateInput) {
+        if (dateStr) {
+            dateInput.value = dateStr;
+        } else {
+            const today = new Date();
+            dateInput.value = today.toISOString().split('T')[0];
+        }
+    }
+    
+    // Set default time if provided
+    const timeInput = document.getElementById('quickCreateTime');
+    if (timeInput && timeMinutes !== undefined) {
+        const hours = Math.floor(timeMinutes / 60);
+        const mins = timeMinutes % 60;
+        timeInput.value = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+    }
+    
+    // Clear form
+    const titleInput = document.getElementById('quickCreateTitle');
+    if (titleInput) titleInput.value = '';
+    
+    const locationInput = document.getElementById('quickCreateLocation');
+    if (locationInput) locationInput.value = '';
+    
+    const descriptionInput = document.getElementById('quickCreateDescription');
+    if (descriptionInput) descriptionInput.value = '';
+    
+    const recurrenceInput = document.getElementById('quickCreateRecurrence');
+    if (recurrenceInput) recurrenceInput.value = '';
+    
+    const durationInput = document.getElementById('quickCreateDuration');
+    if (durationInput) durationInput.value = '60';
+    
+    // Show modal
+    modal.classList.add('active');
+};
+
+// Close the quick create event modal
+window.closeQuickCreateModal = function(event) {
+    if (event && event.target !== event.currentTarget) return;
+    
+    const modal = document.getElementById('quickCreateModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+    
+    // Clear pending pattern
+    window.pendingRecurringPattern = null;
+};
+
+// Save the quick create event
+window.saveQuickCreateEvent = async function(event) {
+    if (event) event.preventDefault();
+    
+    const titleInput = document.getElementById('quickCreateTitle');
+    const dateInput = document.getElementById('quickCreateDate');
+    const timeInput = document.getElementById('quickCreateTime');
+    const durationInput = document.getElementById('quickCreateDuration');
+    const locationInput = document.getElementById('quickCreateLocation');
+    const descriptionInput = document.getElementById('quickCreateDescription');
+    const recurrenceInput = document.getElementById('quickCreateRecurrence');
+    const saveBtn = document.getElementById('quickCreateSaveBtn');
+    
+    // Validate required fields
+    if (!titleInput?.value || !dateInput?.value) {
+        showError('Please fill in the required fields');
+        return;
+    }
+    
+    // Show loading state
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = 'Creating...';
+    }
+    
+    try {
+        // Build event data
+        const startDateTime = new Date(`${dateInput.value}T${timeInput?.value || '09:00'}:00`);
+        const durationMinutes = parseInt(durationInput?.value || '60');
+        const endDateTime = new Date(startDateTime.getTime() + durationMinutes * 60000);
+        
+        const eventData = {
+            title: titleInput.value,
+            start: startDateTime.toISOString(),
+            end: endDateTime.toISOString(),
+            location: locationInput?.value || '',
+            description: descriptionInput?.value || '',
+            recurrence: recurrenceInput?.value || null,
+            calendarType: 'zeitline',
+            source: 'web'
+        };
+        
+        // Check for pending recurring pattern from AI
+        if (window.pendingRecurringPattern) {
+            eventData.recurring = window.pendingRecurringPattern;
+            window.pendingRecurringPattern = null;
+        }
+        
+        console.log('Creating event:', eventData);
+        
+        // Save to Firestore via API
+        const response = await apiCall('/calendars/events', {
+            method: 'POST',
+            body: JSON.stringify(eventData)
+        });
+        
+        if (response.success || response.data) {
+            showSuccess('Event created successfully!');
+            closeQuickCreateModal();
+            
+            // Reload calendar events to show the new event
+            await loadCalendarEvents();
+        } else {
+            throw new Error(response.error || 'Failed to create event');
+        }
+    } catch (error) {
+        console.error('Error creating event:', error);
+        showError(error.message || 'Failed to create event. Please try again.');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = 'Create Event';
+        }
+    }
+};
+
+// =====================================================
+// Sync Calendars Function
+// =====================================================
+
+window.syncCalendars = async function() {
+    const syncBtn = document.getElementById('syncBtn');
+    const syncIcon = document.getElementById('syncIcon');
+    const syncBtnText = document.getElementById('syncBtnText');
+    const lastSyncInfo = document.getElementById('lastSyncInfo');
+    
+    // Show loading state
+    if (syncBtn) syncBtn.disabled = true;
+    if (syncIcon) syncIcon.style.animation = 'spin 1s linear infinite';
+    if (syncBtnText) syncBtnText.textContent = 'Syncing...';
+    
+    // Add spin animation if not exists
+    if (!document.getElementById('syncSpinStyle')) {
+        const style = document.createElement('style');
+        style.id = 'syncSpinStyle';
+        style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+        document.head.appendChild(style);
+    }
+    
+    try {
+        console.log('🔄 Starting calendar sync...');
+        
+        // Reload connected calendars
+        await loadConnectedCalendars();
+        
+        // Reload calendar events
+        await loadCalendarEvents();
+        
+        // Update last sync time
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (lastSyncInfo) {
+            lastSyncInfo.textContent = `Last synced: ${timeStr}`;
+        }
+        
+        showSuccess('Calendar synced successfully!');
+        console.log('✅ Calendar sync complete');
+    } catch (error) {
+        console.error('❌ Sync error:', error);
+        showError('Failed to sync calendar. Please try again.');
+    } finally {
+        // Reset button state
+        if (syncBtn) syncBtn.disabled = false;
+        if (syncIcon) syncIcon.style.animation = '';
+        if (syncBtnText) syncBtnText.textContent = 'Sync';
+    }
+};
+
+// =====================================================
+// Helper functions for notifications
+// =====================================================
+
+function showSuccess(message) {
+    // Check if showSuccess is already defined globally
+    if (typeof window.showNotification === 'function') {
+        window.showNotification(message, 'success');
+        return;
+    }
+    
+    // Fallback: create a simple toast notification
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: linear-gradient(135deg, #c9ff57, #57ffd4);
+        color: #1a1a2e;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-weight: 500;
+        z-index: 10000;
+        animation: slideUp 0.3s ease;
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+function showError(message) {
+    // Check if showError is already defined globally
+    if (typeof window.showNotification === 'function') {
+        window.showNotification(message, 'error');
+        return;
+    }
+    
+    // Fallback: create a simple toast notification
+    const toast = document.createElement('div');
+    toast.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #ff6b6b;
+        color: white;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-weight: 500;
+        z-index: 10000;
+        animation: slideUp 0.3s ease;
+    `;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+        toast.style.animation = 'fadeOut 0.3s ease';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
 // Initialize AI Assistant on page load
 document.addEventListener('DOMContentLoaded', () => {
     // Add "Analyze Calendar" button to AI suggestions
