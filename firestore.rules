@@ -94,6 +94,21 @@ service cloud.firestore {
       match /taskLists/{listId} {
         allow read, write: if isOwner(userId);
       }
+      
+      // User's calorie entries subcollection (daily food tracking)
+      match /calorieEntries/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's food entries subcollection (from nutrition page)
+      match /foodEntries/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's exercise entries subcollection
+      match /exerciseEntries/{entryId} {
+        allow read, write: if isOwner(userId);
+      }
     }
     
     // OAuth states collection (temporary, for OAuth flow)

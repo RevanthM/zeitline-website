@@ -270,11 +270,446 @@
             color: var(--text-primary);
         }
         
+        /* Calorie Tracker Styles */
+        .calorie-tracker {
+            background: linear-gradient(135deg, rgba(201, 255, 87, 0.08) 0%, rgba(87, 255, 212, 0.05) 100%);
+            border: 1px solid rgba(201, 255, 87, 0.2);
+            border-radius: 24px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .calorie-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .calorie-header h2 {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .calorie-goal-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+            padding: 0.5rem 1rem;
+            border-radius: 100px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .calorie-goal-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+        
+        .calorie-display {
+            display: grid;
+            grid-template-columns: 1fr 200px 1fr;
+            align-items: center;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .calorie-stat {
+            text-align: center;
+        }
+        
+        .calorie-stat-value {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 2.5rem;
+            font-weight: 400;
+            line-height: 1;
+        }
+        
+        .calorie-stat-value.eaten {
+            color: var(--accent-tertiary);
+        }
+        
+        .calorie-stat-value.remaining {
+            color: var(--accent-secondary);
+        }
+        
+        .calorie-stat-value.over-budget {
+            color: #ff4444;
+        }
+        
+        .calorie-stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        .calorie-ring-container {
+            position: relative;
+            width: 200px;
+            height: 200px;
+        }
+        
+        .calorie-ring-container svg {
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+        
+        .calorie-ring-bg {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.1);
+            stroke-width: 16;
+        }
+        
+        .calorie-ring-progress {
+            fill: none;
+            stroke: url(#calorieGradient);
+            stroke-width: 16;
+            stroke-linecap: round;
+            stroke-dasharray: 502.65;
+            stroke-dashoffset: 502.65;
+            transition: stroke-dashoffset 0.8s ease;
+        }
+        
+        .calorie-ring-progress.over-budget {
+            stroke: #ff4444;
+        }
+        
+        .calorie-ring-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+        
+        .calorie-ring-value {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 2.25rem;
+            font-weight: 400;
+            line-height: 1;
+        }
+        
+        .calorie-ring-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+        
+        .add-food-section {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .food-input {
+            flex: 1;
+            padding: 0.85rem 1.25rem;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+        
+        .food-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px rgba(201, 255, 87, 0.15);
+        }
+        
+        .food-input::placeholder {
+            color: var(--text-muted);
+        }
+        
+        .calories-input {
+            width: 120px;
+        }
+        
+        .add-food-btn {
+            background: var(--accent-primary);
+            border: none;
+            color: var(--bg-deep);
+            padding: 0.85rem 1.5rem;
+            border-radius: 14px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .add-food-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(201, 255, 87, 0.25);
+        }
+        
+        .add-food-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .food-log {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .food-log-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.85rem 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            transition: all 0.2s ease;
+        }
+        
+        .food-log-item:hover {
+            background: rgba(0, 0, 0, 0.3);
+        }
+        
+        .food-log-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(201, 255, 87, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+        }
+        
+        .food-log-info {
+            flex: 1;
+        }
+        
+        .food-log-name {
+            font-weight: 500;
+            margin-bottom: 0.1rem;
+        }
+        
+        .food-log-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        
+        .food-log-calories {
+            font-weight: 600;
+            color: var(--accent-tertiary);
+            font-size: 0.95rem;
+        }
+        
+        .food-log-delete {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.5rem;
+            opacity: 0;
+            transition: all 0.2s ease;
+            font-size: 1rem;
+        }
+        
+        .food-log-item:hover .food-log-delete {
+            opacity: 1;
+        }
+        
+        .food-log-delete:hover {
+            color: var(--accent-tertiary);
+        }
+        
+        .food-log-empty {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+        }
+        
+        .food-log-empty .icon {
+            font-size: 2.5rem;
+            opacity: 0.5;
+            margin-bottom: 0.75rem;
+        }
+        
+        /* Goal Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .modal {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 24px;
+            width: 90%;
+            max-width: 420px;
+            padding: 2rem;
+            transform: scale(0.9) translateY(20px);
+            transition: transform 0.3s ease;
+        }
+        
+        .modal-overlay.active .modal {
+            transform: scale(1) translateY(0);
+        }
+        
+        .modal h3 {
+            font-family: 'Instrument Serif', Georgia, serif;
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .modal p {
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .modal-input-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .modal-input-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+        
+        .modal-input {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 14px;
+            color: var(--text-primary);
+            font-size: 1.25rem;
+            font-family: inherit;
+            text-align: center;
+        }
+        
+        .modal-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .modal-actions button {
+            flex: 1;
+            padding: 0.85rem;
+            border-radius: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .modal-cancel {
+            background: transparent;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+        
+        .modal-cancel:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .modal-save {
+            background: var(--accent-primary);
+            border: none;
+            color: var(--bg-deep);
+        }
+        
+        .modal-save:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(201, 255, 87, 0.25);
+        }
+        
+        .quick-goals {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .quick-goal-btn {
+            flex: 1;
+            padding: 0.6rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .quick-goal-btn:hover {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+        
         @media (max-width: 768px) {
             .health-header {
                 flex-direction: column;
                 gap: 1rem;
                 text-align: center;
+            }
+            
+            .calorie-display {
+                grid-template-columns: 1fr;
+                gap: 1.5rem;
+            }
+            
+            .calorie-ring-container {
+                margin: 0 auto;
+                order: -1;
+            }
+            
+            .add-food-section {
+                flex-direction: column;
+            }
+            
+            .calories-input {
+                width: 100%;
             }
         }
     </style>
@@ -293,6 +728,93 @@
             <div class="sync-status">
                 <div class="sync-dot" id="syncDot"></div>
                 <span id="syncStatus">Connecting to Firebase...</span>
+            </div>
+        </div>
+        
+        <!-- Calorie Tracker Section -->
+        <div class="calorie-tracker" id="calorieTracker">
+            <div class="calorie-header">
+                <h2>🍽️ Calorie Budget</h2>
+                <button class="calorie-goal-btn" onclick="openGoalModal()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="3"/>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                    Set Goal
+                </button>
+            </div>
+            
+            <div class="calorie-display">
+                <div class="calorie-stat">
+                    <div class="calorie-stat-value eaten" id="caloriesEatenDisplay">0</div>
+                    <div class="calorie-stat-label">Eaten</div>
+                </div>
+                
+                <div class="calorie-ring-container">
+                    <svg viewBox="0 0 180 180">
+                        <defs>
+                            <linearGradient id="calorieGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="var(--accent-primary)"/>
+                                <stop offset="100%" stop-color="var(--accent-secondary)"/>
+                            </linearGradient>
+                        </defs>
+                        <circle class="calorie-ring-bg" cx="90" cy="90" r="80"/>
+                        <circle class="calorie-ring-progress" id="calorieRingProgress" cx="90" cy="90" r="80"/>
+                    </svg>
+                    <div class="calorie-ring-center">
+                        <div class="calorie-ring-value" id="calorieGoalDisplay">2000</div>
+                        <div class="calorie-ring-label">cal goal</div>
+                    </div>
+                </div>
+                
+                <div class="calorie-stat">
+                    <div class="calorie-stat-value remaining" id="caloriesRemainingDisplay">2000</div>
+                    <div class="calorie-stat-label">Remaining</div>
+                </div>
+            </div>
+            
+            <div class="add-food-section">
+                <input type="text" class="food-input" id="foodNameInput" placeholder="What did you eat?" autocomplete="off">
+                <input type="number" class="food-input calories-input" id="foodCaloriesInput" placeholder="Calories" min="0">
+                <button class="add-food-btn" id="addFoodBtn" onclick="addFoodEntry()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                    Add
+                </button>
+            </div>
+            
+            <div class="food-log" id="foodLog">
+                <div class="food-log-empty">
+                    <div class="icon">🥗</div>
+                    <p>No food logged today</p>
+                    <p style="font-size: 0.8rem;">Add your meals to track calories</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Goal Setting Modal -->
+        <div class="modal-overlay" id="goalModal">
+            <div class="modal">
+                <h3>🎯 Set Daily Calorie Goal</h3>
+                <p>How many calories do you want to limit yourself to each day?</p>
+                
+                <div class="quick-goals">
+                    <button class="quick-goal-btn" onclick="setQuickGoal(1500)">1500</button>
+                    <button class="quick-goal-btn" onclick="setQuickGoal(1800)">1800</button>
+                    <button class="quick-goal-btn" onclick="setQuickGoal(2000)">2000</button>
+                    <button class="quick-goal-btn" onclick="setQuickGoal(2500)">2500</button>
+                </div>
+                
+                <div class="modal-input-group">
+                    <label for="goalInput">Custom calorie goal</label>
+                    <input type="number" class="modal-input" id="goalInput" placeholder="2000" min="500" max="10000">
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="modal-cancel" onclick="closeGoalModal()">Cancel</button>
+                    <button class="modal-save" onclick="saveCalorieGoal()">Save Goal</button>
+                </div>
             </div>
         </div>
         
@@ -690,7 +1212,314 @@
             if (healthUnsubscribe) healthUnsubscribe();
             if (workoutsUnsubscribe) workoutsUnsubscribe();
             if (timerInterval) clearInterval(timerInterval);
+            if (foodEntriesUnsubscribe) foodEntriesUnsubscribe();
         });
+        
+        // ==========================================
+        // CALORIE TRACKER FUNCTIONALITY
+        // ==========================================
+        
+        let calorieGoal = 2000;
+        let foodEntries = [];
+        let foodEntriesUnsubscribe = null;
+        
+        // Get today's date string for document ID
+        function getTodayString() {
+            const today = new Date();
+            return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        }
+        
+        // Load calorie goal from Firebase
+        async function loadCalorieGoal(userId) {
+            try {
+                const doc = await db.collection('users').doc(userId).get();
+                if (doc.exists && doc.data().calorieGoal) {
+                    calorieGoal = doc.data().calorieGoal;
+                }
+                updateCalorieDisplay();
+            } catch (error) {
+                console.error('Failed to load calorie goal:', error);
+            }
+        }
+        
+        // Save calorie goal to Firebase
+        async function saveCalorieGoalToFirebase(goal) {
+            if (!currentUser) return;
+            try {
+                await db.collection('users').doc(currentUser.uid).set({
+                    calorieGoal: goal
+                }, { merge: true });
+                console.log('✅ Calorie goal saved:', goal);
+            } catch (error) {
+                console.error('Failed to save calorie goal:', error);
+            }
+        }
+        
+        // Start listening to food entries
+        function startFoodEntriesListener(userId) {
+            const today = new Date();
+            const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0);
+            const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59);
+            
+            if (foodEntriesUnsubscribe) foodEntriesUnsubscribe();
+            
+            foodEntriesUnsubscribe = db.collection('users').doc(userId)
+                .collection('calorieEntries')
+                .where('date', '==', getTodayString())
+                .orderBy('timestamp', 'desc')
+                .onSnapshot(snapshot => {
+                    foodEntries = snapshot.docs.map(doc => ({
+                        id: doc.id,
+                        ...doc.data()
+                    }));
+                    renderFoodLog();
+                    updateCalorieDisplay();
+                }, error => {
+                    console.error('Food entries listener error:', error);
+                });
+        }
+        
+        // Render food log
+        function renderFoodLog() {
+            const container = document.getElementById('foodLog');
+            
+            if (foodEntries.length === 0) {
+                container.innerHTML = `
+                    <div class="food-log-empty">
+                        <div class="icon">🥗</div>
+                        <p>No food logged today</p>
+                        <p style="font-size: 0.8rem;">Add your meals to track calories</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = foodEntries.map(entry => {
+                const time = entry.timestamp?.toDate ? entry.timestamp.toDate() : new Date(entry.timestamp);
+                const timeStr = time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                const emoji = getFoodEmoji(entry.name);
+                
+                return `
+                    <div class="food-log-item" data-id="${entry.id}">
+                        <div class="food-log-icon">${emoji}</div>
+                        <div class="food-log-info">
+                            <div class="food-log-name">${entry.name}</div>
+                            <div class="food-log-time">${timeStr}</div>
+                        </div>
+                        <div class="food-log-calories">${entry.calories} cal</div>
+                        <button class="food-log-delete" onclick="deleteFoodEntry('${entry.id}')" title="Delete">
+                            ✕
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Get food emoji based on name
+        function getFoodEmoji(name) {
+            const lower = name.toLowerCase();
+            if (lower.includes('breakfast') || lower.includes('egg') || lower.includes('cereal') || lower.includes('toast')) return '🍳';
+            if (lower.includes('lunch')) return '🥪';
+            if (lower.includes('dinner') || lower.includes('supper')) return '🍽️';
+            if (lower.includes('coffee') || lower.includes('latte')) return '☕';
+            if (lower.includes('tea')) return '🍵';
+            if (lower.includes('salad') || lower.includes('vegetable')) return '🥗';
+            if (lower.includes('fruit') || lower.includes('apple') || lower.includes('banana')) return '🍎';
+            if (lower.includes('chicken') || lower.includes('meat') || lower.includes('beef') || lower.includes('steak')) return '🍗';
+            if (lower.includes('fish') || lower.includes('salmon') || lower.includes('tuna')) return '🐟';
+            if (lower.includes('pizza')) return '🍕';
+            if (lower.includes('burger') || lower.includes('hamburger')) return '🍔';
+            if (lower.includes('sandwich') || lower.includes('sub')) return '🥪';
+            if (lower.includes('pasta') || lower.includes('spaghetti') || lower.includes('noodle')) return '🍝';
+            if (lower.includes('rice') || lower.includes('sushi')) return '🍚';
+            if (lower.includes('soup')) return '🍲';
+            if (lower.includes('bread') || lower.includes('bagel')) return '🍞';
+            if (lower.includes('cake') || lower.includes('dessert') || lower.includes('ice cream') || lower.includes('cookie')) return '🍰';
+            if (lower.includes('chocolate') || lower.includes('candy')) return '🍫';
+            if (lower.includes('snack') || lower.includes('chips') || lower.includes('crackers')) return '🍿';
+            if (lower.includes('smoothie') || lower.includes('shake') || lower.includes('juice')) return '🥤';
+            if (lower.includes('water')) return '💧';
+            if (lower.includes('soda') || lower.includes('coke') || lower.includes('cola')) return '🥤';
+            if (lower.includes('beer') || lower.includes('wine') || lower.includes('alcohol')) return '🍺';
+            return '🍴';
+        }
+        
+        // Update calorie display
+        function updateCalorieDisplay() {
+            const totalEaten = foodEntries.reduce((sum, entry) => sum + (entry.calories || 0), 0);
+            const remaining = calorieGoal - totalEaten;
+            const percentage = Math.min((totalEaten / calorieGoal) * 100, 100);
+            const isOverBudget = remaining < 0;
+            
+            // Update eaten value
+            document.getElementById('caloriesEatenDisplay').textContent = totalEaten;
+            
+            // Update goal display
+            document.getElementById('calorieGoalDisplay').textContent = calorieGoal;
+            
+            // Update remaining value
+            const remainingEl = document.getElementById('caloriesRemainingDisplay');
+            if (isOverBudget) {
+                remainingEl.textContent = '+' + Math.abs(remaining);
+                remainingEl.classList.add('over-budget');
+                remainingEl.classList.remove('remaining');
+            } else {
+                remainingEl.textContent = remaining;
+                remainingEl.classList.remove('over-budget');
+                remainingEl.classList.add('remaining');
+            }
+            
+            // Update ring progress
+            const circumference = 2 * Math.PI * 80; // r=80
+            const offset = circumference * (1 - (percentage / 100));
+            const ring = document.getElementById('calorieRingProgress');
+            ring.style.strokeDasharray = circumference;
+            ring.style.strokeDashoffset = offset;
+            
+            if (isOverBudget) {
+                ring.classList.add('over-budget');
+            } else {
+                ring.classList.remove('over-budget');
+            }
+        }
+        
+        // Add food entry
+        async function addFoodEntry() {
+            const nameInput = document.getElementById('foodNameInput');
+            const caloriesInput = document.getElementById('foodCaloriesInput');
+            
+            const name = nameInput.value.trim();
+            const calories = parseInt(caloriesInput.value);
+            
+            if (!name) {
+                nameInput.focus();
+                nameInput.style.borderColor = 'var(--accent-tertiary)';
+                setTimeout(() => nameInput.style.borderColor = '', 1000);
+                return;
+            }
+            
+            if (!calories || calories <= 0) {
+                caloriesInput.focus();
+                caloriesInput.style.borderColor = 'var(--accent-tertiary)';
+                setTimeout(() => caloriesInput.style.borderColor = '', 1000);
+                return;
+            }
+            
+            if (!currentUser) {
+                alert('Please log in to track calories');
+                return;
+            }
+            
+            const btn = document.getElementById('addFoodBtn');
+            btn.disabled = true;
+            
+            try {
+                const entry = {
+                    name: name,
+                    calories: calories,
+                    date: getTodayString(),
+                    timestamp: firebase.firestore.Timestamp.now()
+                };
+                
+                await db.collection('users').doc(currentUser.uid)
+                    .collection('calorieEntries')
+                    .add(entry);
+                
+                // Clear inputs
+                nameInput.value = '';
+                caloriesInput.value = '';
+                nameInput.focus();
+                
+                console.log('✅ Food entry added:', name, calories);
+            } catch (error) {
+                console.error('Failed to add food entry:', error);
+                alert('Failed to add food. Please try again.');
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        // Delete food entry
+        async function deleteFoodEntry(entryId) {
+            if (!currentUser) return;
+            
+            try {
+                await db.collection('users').doc(currentUser.uid)
+                    .collection('calorieEntries')
+                    .doc(entryId)
+                    .delete();
+                console.log('✅ Food entry deleted');
+            } catch (error) {
+                console.error('Failed to delete food entry:', error);
+            }
+        }
+        
+        // Goal Modal Functions
+        function openGoalModal() {
+            document.getElementById('goalInput').value = calorieGoal;
+            document.getElementById('goalModal').classList.add('active');
+        }
+        
+        function closeGoalModal() {
+            document.getElementById('goalModal').classList.remove('active');
+        }
+        
+        function setQuickGoal(goal) {
+            document.getElementById('goalInput').value = goal;
+        }
+        
+        function saveCalorieGoal() {
+            const input = document.getElementById('goalInput');
+            const newGoal = parseInt(input.value);
+            
+            if (!newGoal || newGoal < 500 || newGoal > 10000) {
+                input.style.borderColor = 'var(--accent-tertiary)';
+                setTimeout(() => input.style.borderColor = '', 1000);
+                return;
+            }
+            
+            calorieGoal = newGoal;
+            saveCalorieGoalToFirebase(newGoal);
+            updateCalorieDisplay();
+            closeGoalModal();
+        }
+        
+        // Handle Enter key for food input
+        document.getElementById('foodNameInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('foodCaloriesInput').focus();
+            }
+        });
+        
+        document.getElementById('foodCaloriesInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                addFoodEntry();
+            }
+        });
+        
+        // Close modal on overlay click
+        document.getElementById('goalModal').addEventListener('click', (e) => {
+            if (e.target.classList.contains('modal-overlay')) {
+                closeGoalModal();
+            }
+        });
+        
+        // Initialize calorie tracker when auth state changes
+        window.addEventListener('authStateChanged', (e) => {
+            const user = e.detail;
+            if (user) {
+                loadCalorieGoal(user.uid);
+                startFoodEntriesListener(user.uid);
+            }
+        });
+        
+        // Fallback initialization
+        setTimeout(() => {
+            if (currentUser) {
+                loadCalorieGoal(currentUser.uid);
+                startFoodEntriesListener(currentUser.uid);
+            }
+        }, 2500);
     </script>
 </body>
 </html>
