@@ -2176,6 +2176,79 @@
         
         let searchTimeout = null;
         
+        // Common whole foods database (per 100g unless noted)
+        const commonFoods = [
+            // Fruits
+            { name: 'Apple', calories: 52, protein: 0.3, carbs: 14, fat: 0.2, category: 'fruit', emoji: '🍎' },
+            { name: 'Banana', calories: 89, protein: 1.1, carbs: 23, fat: 0.3, category: 'fruit', emoji: '🍌' },
+            { name: 'Orange', calories: 47, protein: 0.9, carbs: 12, fat: 0.1, category: 'fruit', emoji: '🍊' },
+            { name: 'Strawberries', calories: 32, protein: 0.7, carbs: 8, fat: 0.3, category: 'fruit', emoji: '🍓' },
+            { name: 'Grapes', calories: 69, protein: 0.7, carbs: 18, fat: 0.2, category: 'fruit', emoji: '🍇' },
+            { name: 'Watermelon', calories: 30, protein: 0.6, carbs: 8, fat: 0.2, category: 'fruit', emoji: '🍉' },
+            { name: 'Mango', calories: 60, protein: 0.8, carbs: 15, fat: 0.4, category: 'fruit', emoji: '🥭' },
+            { name: 'Pineapple', calories: 50, protein: 0.5, carbs: 13, fat: 0.1, category: 'fruit', emoji: '🍍' },
+            { name: 'Blueberries', calories: 57, protein: 0.7, carbs: 14, fat: 0.3, category: 'fruit', emoji: '🫐' },
+            { name: 'Avocado', calories: 160, protein: 2, carbs: 9, fat: 15, category: 'fruit', emoji: '🥑' },
+            
+            // Vegetables
+            { name: 'Broccoli', calories: 34, protein: 2.8, carbs: 7, fat: 0.4, category: 'vegetable', emoji: '🥦' },
+            { name: 'Carrot', calories: 41, protein: 0.9, carbs: 10, fat: 0.2, category: 'vegetable', emoji: '🥕' },
+            { name: 'Spinach', calories: 23, protein: 2.9, carbs: 3.6, fat: 0.4, category: 'vegetable', emoji: '🥬' },
+            { name: 'Tomato', calories: 18, protein: 0.9, carbs: 3.9, fat: 0.2, category: 'vegetable', emoji: '🍅' },
+            { name: 'Cucumber', calories: 15, protein: 0.7, carbs: 3.6, fat: 0.1, category: 'vegetable', emoji: '🥒' },
+            { name: 'Bell Pepper', calories: 31, protein: 1, carbs: 6, fat: 0.3, category: 'vegetable', emoji: '🫑' },
+            { name: 'Onion', calories: 40, protein: 1.1, carbs: 9, fat: 0.1, category: 'vegetable', emoji: '🧅' },
+            { name: 'Potato', calories: 77, protein: 2, carbs: 17, fat: 0.1, category: 'vegetable', emoji: '🥔' },
+            { name: 'Sweet Potato', calories: 86, protein: 1.6, carbs: 20, fat: 0.1, category: 'vegetable', emoji: '🍠' },
+            { name: 'Corn', calories: 96, protein: 3.4, carbs: 21, fat: 1.5, category: 'vegetable', emoji: '🌽' },
+            
+            // Proteins
+            { name: 'Chicken Breast', calories: 165, protein: 31, carbs: 0, fat: 3.6, category: 'protein', emoji: '🍗' },
+            { name: 'Chicken Thigh', calories: 209, protein: 26, carbs: 0, fat: 11, category: 'protein', emoji: '🍗' },
+            { name: 'Ground Beef (80/20)', calories: 254, protein: 17, carbs: 0, fat: 20, category: 'protein', emoji: '🥩' },
+            { name: 'Steak (Sirloin)', calories: 206, protein: 26, carbs: 0, fat: 11, category: 'protein', emoji: '🥩' },
+            { name: 'Salmon', calories: 208, protein: 20, carbs: 0, fat: 13, category: 'protein', emoji: '🐟' },
+            { name: 'Tuna', calories: 132, protein: 28, carbs: 0, fat: 1, category: 'protein', emoji: '🐟' },
+            { name: 'Shrimp', calories: 99, protein: 24, carbs: 0.2, fat: 0.3, category: 'protein', emoji: '🦐' },
+            { name: 'Egg (1 large)', calories: 72, protein: 6, carbs: 0.4, fat: 5, category: 'protein', emoji: '🥚', serving: '1 egg' },
+            { name: 'Egg Whites (1 large)', calories: 17, protein: 3.6, carbs: 0.2, fat: 0.1, category: 'protein', emoji: '🥚', serving: '1 egg white' },
+            { name: 'Turkey Breast', calories: 135, protein: 30, carbs: 0, fat: 1, category: 'protein', emoji: '🦃' },
+            { name: 'Pork Chop', calories: 231, protein: 25, carbs: 0, fat: 14, category: 'protein', emoji: '🥓' },
+            { name: 'Bacon (2 slices)', calories: 86, protein: 6, carbs: 0.2, fat: 7, category: 'protein', emoji: '🥓', serving: '2 slices' },
+            { name: 'Tofu', calories: 76, protein: 8, carbs: 1.9, fat: 4.8, category: 'protein', emoji: '🧈' },
+            
+            // Dairy
+            { name: 'Milk (Whole)', calories: 61, protein: 3.2, carbs: 4.8, fat: 3.3, category: 'dairy', emoji: '🥛' },
+            { name: 'Milk (Skim)', calories: 34, protein: 3.4, carbs: 5, fat: 0.1, category: 'dairy', emoji: '🥛' },
+            { name: 'Greek Yogurt', calories: 59, protein: 10, carbs: 3.6, fat: 0.7, category: 'dairy', emoji: '🥛' },
+            { name: 'Cheese (Cheddar)', calories: 403, protein: 25, carbs: 1.3, fat: 33, category: 'dairy', emoji: '🧀' },
+            { name: 'Cottage Cheese', calories: 98, protein: 11, carbs: 3.4, fat: 4.3, category: 'dairy', emoji: '🧀' },
+            { name: 'Butter (1 tbsp)', calories: 102, protein: 0.1, carbs: 0, fat: 12, category: 'dairy', emoji: '🧈', serving: '1 tbsp' },
+            
+            // Grains & Carbs
+            { name: 'White Rice (cooked)', calories: 130, protein: 2.7, carbs: 28, fat: 0.3, category: 'grain', emoji: '🍚' },
+            { name: 'Brown Rice (cooked)', calories: 112, protein: 2.6, carbs: 24, fat: 0.9, category: 'grain', emoji: '🍚' },
+            { name: 'Pasta (cooked)', calories: 131, protein: 5, carbs: 25, fat: 1.1, category: 'grain', emoji: '🍝' },
+            { name: 'Bread (1 slice)', calories: 79, protein: 2.7, carbs: 15, fat: 1, category: 'grain', emoji: '🍞', serving: '1 slice' },
+            { name: 'Oatmeal (cooked)', calories: 68, protein: 2.4, carbs: 12, fat: 1.4, category: 'grain', emoji: '🥣' },
+            { name: 'Quinoa (cooked)', calories: 120, protein: 4.4, carbs: 21, fat: 1.9, category: 'grain', emoji: '🍚' },
+            
+            // Beverages
+            { name: 'Coffee (black)', calories: 2, protein: 0.3, carbs: 0, fat: 0, category: 'beverage', emoji: '☕' },
+            { name: 'Orange Juice (1 cup)', calories: 112, protein: 1.7, carbs: 26, fat: 0.5, category: 'beverage', emoji: '🍊', serving: '1 cup' },
+            { name: 'Soda (12 oz)', calories: 140, protein: 0, carbs: 39, fat: 0, category: 'beverage', emoji: '🥤', serving: '12 oz can' },
+            { name: 'Beer (12 oz)', calories: 153, protein: 1.6, carbs: 13, fat: 0, category: 'beverage', emoji: '🍺', serving: '12 oz' },
+            { name: 'Wine (5 oz)', calories: 125, protein: 0.1, carbs: 4, fat: 0, category: 'beverage', emoji: '🍷', serving: '5 oz glass' },
+            
+            // Snacks & Others
+            { name: 'Almonds (1 oz)', calories: 164, protein: 6, carbs: 6, fat: 14, category: 'snack', emoji: '🥜', serving: '1 oz (23 nuts)' },
+            { name: 'Peanut Butter (2 tbsp)', calories: 188, protein: 8, carbs: 6, fat: 16, category: 'snack', emoji: '🥜', serving: '2 tbsp' },
+            { name: 'Dark Chocolate (1 oz)', calories: 155, protein: 1.4, carbs: 17, fat: 9, category: 'snack', emoji: '🍫', serving: '1 oz' },
+            { name: 'Chips (1 oz)', calories: 152, protein: 2, carbs: 15, fat: 10, category: 'snack', emoji: '🍟', serving: '1 oz' },
+            { name: 'Ice Cream (1/2 cup)', calories: 137, protein: 2.3, carbs: 16, fat: 7, category: 'snack', emoji: '🍦', serving: '1/2 cup' },
+            { name: 'Honey (1 tbsp)', calories: 64, protein: 0.1, carbs: 17, fat: 0, category: 'snack', emoji: '🍯', serving: '1 tbsp' },
+        ];
+        
         // Initialize search input listeners
         document.getElementById('foodSearchInput')?.addEventListener('input', (e) => {
             const query = e.target.value.trim();
@@ -2196,12 +2269,28 @@
                 return;
             }
             
-            showSearchLoading();
+            // First, search common foods instantly
+            const localResults = searchCommonFoods(query);
+            if (localResults.length > 0) {
+                renderCombinedResults(localResults, []);
+            } else {
+                showSearchLoading();
+            }
             
-            searchTimeout = setTimeout(() => {
-                searchFoodsAPI(query);
+            // Then fetch API results after a delay
+            searchTimeout = setTimeout(async () => {
+                const apiResults = await searchFoodsAPI(query);
+                renderCombinedResults(localResults, apiResults || []);
             }, 400);
         });
+        
+        // Search common foods database
+        function searchCommonFoods(query) {
+            const lowerQuery = query.toLowerCase();
+            return commonFoods.filter(food => 
+                food.name.toLowerCase().includes(lowerQuery)
+            ).slice(0, 8); // Limit to 8 results
+        }
         
         // Close dropdown when clicking outside
         document.addEventListener('click', (e) => {
@@ -2215,61 +2304,99 @@
         async function searchFoodsAPI(query) {
             try {
                 const response = await fetch(
-                    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=12&fields=code,product_name,product_name_en,brands,image_front_small_url,nutriments`
+                    `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,product_name_en,brands,image_front_small_url,nutriments`
                 );
                 const data = await response.json();
-                
-                if (data.products && data.products.length > 0) {
-                    renderSearchResults(data.products);
-                } else {
-                    showSearchEmpty();
-                }
+                return data.products || [];
             } catch (error) {
                 console.error('Food search failed:', error);
-                showSearchEmpty('Search failed. Try again.');
+                return [];
             }
         }
         
-        // Render search results
-        function renderSearchResults(products) {
+        // Render combined results (common foods first, then API results)
+        function renderCombinedResults(commonResults, apiProducts) {
             const dropdown = document.getElementById('searchResults');
+            let html = '';
             
-            dropdown.innerHTML = products.map(product => {
-                const name = product.product_name || product.product_name_en || 'Unknown';
-                const brand = product.brands || '';
-                const calories = Math.round(product.nutriments?.['energy-kcal_100g'] || 0);
-                const image = product.image_front_small_url || '';
-                const emoji = getFoodEmoji(name);
+            // Render common foods first (with a header if we have results)
+            if (commonResults.length > 0) {
+                html += '<div style="padding: 0.5rem 1rem; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border-subtle);">Whole Foods</div>';
                 
-                // Create safe JSON for onclick
-                const productData = encodeURIComponent(JSON.stringify({
-                    name: name.substring(0, 50),
-                    brand: brand.substring(0, 30),
-                    calories: calories,
-                    protein: Math.round(product.nutriments?.['proteins_100g'] || 0),
-                    carbs: Math.round(product.nutriments?.['carbohydrates_100g'] || 0),
-                    fat: Math.round(product.nutriments?.['fat_100g'] || 0)
-                }));
-                
-                return `
-                    <div class="search-result-item" onclick="addFromSearch('${productData}')">
-                        <div class="search-result-icon">
-                            ${image ? `<img src="${image}" alt="" onerror="this.parentElement.innerHTML='${emoji}'">` : emoji}
+                html += commonResults.map(food => {
+                    const productData = encodeURIComponent(JSON.stringify({
+                        name: food.name,
+                        brand: food.serving || 'per 100g',
+                        calories: food.calories,
+                        protein: food.protein,
+                        carbs: food.carbs,
+                        fat: food.fat
+                    }));
+                    
+                    return `
+                        <div class="search-result-item" onclick="addFromSearch('${productData}')">
+                            <div class="search-result-icon">${food.emoji}</div>
+                            <div class="search-result-info">
+                                <div class="search-result-name">${escapeHtml(food.name)}</div>
+                                <div class="search-result-brand">${food.serving || 'per 100g'}</div>
+                            </div>
+                            <div class="search-result-cals">${food.calories} cal</div>
+                            <button class="search-result-add" title="Add to log">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <path d="M12 5v14M5 12h14"/>
+                                </svg>
+                            </button>
                         </div>
-                        <div class="search-result-info">
-                            <div class="search-result-name">${escapeHtml(name)}</div>
-                            ${brand ? `<div class="search-result-brand">${escapeHtml(brand)}</div>` : ''}
-                        </div>
-                        <div class="search-result-cals">${calories} cal</div>
-                        <button class="search-result-add" title="Add to log">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                                <path d="M12 5v14M5 12h14"/>
-                            </svg>
-                        </button>
-                    </div>
-                `;
-            }).join('');
+                    `;
+                }).join('');
+            }
             
+            // Render API products (packaged foods)
+            if (apiProducts.length > 0) {
+                html += '<div style="padding: 0.5rem 1rem; font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border-subtle);">Packaged Foods</div>';
+                
+                html += apiProducts.map(product => {
+                    const name = product.product_name || product.product_name_en || 'Unknown';
+                    const brand = product.brands || '';
+                    const calories = Math.round(product.nutriments?.['energy-kcal_100g'] || 0);
+                    const image = product.image_front_small_url || '';
+                    const emoji = getFoodEmoji(name);
+                    
+                    const productData = encodeURIComponent(JSON.stringify({
+                        name: name.substring(0, 50),
+                        brand: brand.substring(0, 30),
+                        calories: calories,
+                        protein: Math.round(product.nutriments?.['proteins_100g'] || 0),
+                        carbs: Math.round(product.nutriments?.['carbohydrates_100g'] || 0),
+                        fat: Math.round(product.nutriments?.['fat_100g'] || 0)
+                    }));
+                    
+                    return `
+                        <div class="search-result-item" onclick="addFromSearch('${productData}')">
+                            <div class="search-result-icon">
+                                ${image ? `<img src="${image}" alt="" onerror="this.parentElement.innerHTML='${emoji}'">` : emoji}
+                            </div>
+                            <div class="search-result-info">
+                                <div class="search-result-name">${escapeHtml(name)}</div>
+                                ${brand ? `<div class="search-result-brand">${escapeHtml(brand)}</div>` : ''}
+                            </div>
+                            <div class="search-result-cals">${calories} cal</div>
+                            <button class="search-result-add" title="Add to log">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                                    <path d="M12 5v14M5 12h14"/>
+                                </svg>
+                            </button>
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            // If no results at all
+            if (commonResults.length === 0 && apiProducts.length === 0) {
+                html = '<div class="search-empty">🔍 No foods found. Try a different search or add manually.</div>';
+            }
+            
+            dropdown.innerHTML = html;
             dropdown.classList.add('active');
         }
         
