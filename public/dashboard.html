@@ -381,7 +381,7 @@
                     </svg>
                     Health
                 </a>
-                <a href="#" class="nav-item">
+                <a href="/insights.html" class="nav-item">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="20" x2="18" y2="10"/>
                         <line x1="12" y1="20" x2="12" y2="4"/>
@@ -452,27 +452,27 @@
                 </div>
             </div>
             
-            <!-- Stats Grid -->
+            <!-- Health Metrics from Apple Watch -->
             <div class="stats-grid">
                 <div class="stat-card">
-                    <div class="stat-label">Activities Today</div>
-                    <div class="stat-value">7</div>
-                    <div class="stat-change positive">↑ 2 more than yesterday</div>
+                    <div class="stat-label">😴 Sleep</div>
+                    <div class="stat-value" id="dashSleep">--</div>
+                    <div class="stat-change" id="dashSleepChange">Sync with Apple Watch</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Time Tracked</div>
-                    <div class="stat-value">6h 42m</div>
-                    <div class="stat-change positive">↑ 15% from last week</div>
+                    <div class="stat-label">👟 Steps</div>
+                    <div class="stat-value" id="dashSteps">--</div>
+                    <div class="stat-change" id="dashStepsChange">Sync with Apple Watch</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Productive Hours</div>
-                    <div class="stat-value">4h 15m</div>
-                    <div class="stat-change positive">↑ On track</div>
+                    <div class="stat-label">🔥 Calories Burned</div>
+                    <div class="stat-value" id="dashCaloriesBurnedTotal">--</div>
+                    <div class="stat-change" id="dashCaloriesBurnedChange">Sync with Apple Watch</div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Streak</div>
-                    <div class="stat-value">12 days</div>
-                    <div class="stat-change positive">🔥 Keep it up!</div>
+                    <div class="stat-label">⏱️ Active Minutes</div>
+                    <div class="stat-value" id="dashActiveMinutes">--</div>
+                    <div class="stat-change" id="dashActiveMinutesChange">Sync with Apple Watch</div>
                 </div>
             </div>
             
@@ -540,48 +540,13 @@
             <div class="timeline-section">
                 <h2 class="section-title">
                     Today's Timeline
-                    <a href="#" class="btn btn-ghost">View all →</a>
+                    <a href="/timeline.html" class="btn btn-ghost">View all →</a>
                 </h2>
                 <ul class="timeline-list" id="timelineList">
                     <li class="timeline-entry">
-                        <div class="entry-icon rest">😴</div>
-                        <div class="entry-details">
-                            <div class="entry-name">Sleep</div>
-                            <div class="entry-time">11:00 PM – 7:00 AM</div>
+                        <div class="entry-details" style="text-align: center; color: var(--text-muted); width: 100%;">
+                            <div style="padding: 1rem;">Loading activities...</div>
                         </div>
-                        <div class="entry-duration">8h 00m</div>
-                    </li>
-                    <li class="timeline-entry">
-                        <div class="entry-icon food">☕</div>
-                        <div class="entry-details">
-                            <div class="entry-name">Morning Coffee</div>
-                            <div class="entry-time">7:15 AM – 7:30 AM</div>
-                        </div>
-                        <div class="entry-duration">15m</div>
-                    </li>
-                    <li class="timeline-entry">
-                        <div class="entry-icon exercise">🏃</div>
-                        <div class="entry-details">
-                            <div class="entry-name">Morning Run</div>
-                            <div class="entry-time">7:30 AM – 8:15 AM</div>
-                        </div>
-                        <div class="entry-duration">45m</div>
-                    </li>
-                    <li class="timeline-entry">
-                        <div class="entry-icon work">💻</div>
-                        <div class="entry-details">
-                            <div class="entry-name">Deep Work</div>
-                            <div class="entry-time">9:00 AM – 12:00 PM</div>
-                        </div>
-                        <div class="entry-duration">3h 00m</div>
-                    </li>
-                    <li class="timeline-entry">
-                        <div class="entry-icon food">🥗</div>
-                        <div class="entry-details">
-                            <div class="entry-name">Lunch</div>
-                            <div class="entry-time">12:00 PM – 12:45 PM</div>
-                        </div>
-                        <div class="entry-duration">45m</div>
                     </li>
                 </ul>
             </div>
@@ -634,7 +599,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/js/firebase-config.js?v=2.3"></script>
+    <script src="/js/firebase-config.js?v=2.0"></script>
     <script src="/js/activity-manager.js"></script>
     <script>
         // Timer update interval
@@ -992,10 +957,101 @@
                 });
         }
         
+        // Load health data from Apple Watch
+        function loadHealthData(userId) {
+            // Listen to today's health summary from Apple Watch
+            db.collection('users').doc(userId)
+                .collection('healthSummaries').doc('today')
+                .onSnapshot(doc => {
+                    if (doc.exists) {
+                        const data = doc.data();
+                        
+                        // Sleep
+                        const sleepSeconds = data.sleepDuration || 0;
+                        const sleepHours = Math.floor(sleepSeconds / 3600);
+                        const sleepMinutes = Math.floor((sleepSeconds % 3600) / 60);
+                        const sleepEl = document.getElementById('dashSleep');
+                        const sleepChangeEl = document.getElementById('dashSleepChange');
+                        if (sleepEl) {
+                            sleepEl.textContent = sleepSeconds > 0 ? `${sleepHours}h ${sleepMinutes}m` : '--';
+                        }
+                        if (sleepChangeEl) {
+                            if (sleepSeconds > 0) {
+                                const goalHours = 8;
+                                const diff = sleepHours - goalHours;
+                                sleepChangeEl.textContent = diff >= 0 ? `✓ Goal met (${goalHours}h)` : `${Math.abs(diff)}h below goal`;
+                                sleepChangeEl.className = diff >= 0 ? 'stat-change positive' : 'stat-change';
+                            }
+                        }
+                        
+                        // Steps
+                        const steps = data.steps || 0;
+                        const stepsEl = document.getElementById('dashSteps');
+                        const stepsChangeEl = document.getElementById('dashStepsChange');
+                        if (stepsEl) {
+                            stepsEl.textContent = steps > 0 ? steps.toLocaleString() : '--';
+                        }
+                        if (stepsChangeEl && steps > 0) {
+                            const goal = 10000;
+                            const percent = Math.round((steps / goal) * 100);
+                            stepsChangeEl.textContent = percent >= 100 ? '✓ Goal reached!' : `${percent}% of ${goal.toLocaleString()} goal`;
+                            stepsChangeEl.className = percent >= 100 ? 'stat-change positive' : 'stat-change';
+                        }
+                        
+                        // Calories Burned (from activity rings)
+                        const rings = data.activityRings || {};
+                        const caloriesBurned = rings.moveCalories || data.calories || 0;
+                        const caloriesEl = document.getElementById('dashCaloriesBurnedTotal');
+                        const caloriesChangeEl = document.getElementById('dashCaloriesBurnedChange');
+                        if (caloriesEl) {
+                            caloriesEl.textContent = caloriesBurned > 0 ? caloriesBurned.toLocaleString() : '--';
+                        }
+                        if (caloriesChangeEl && caloriesBurned > 0) {
+                            const goal = rings.moveGoal || 600;
+                            const percent = Math.round((caloriesBurned / goal) * 100);
+                            caloriesChangeEl.textContent = percent >= 100 ? '✓ Move goal complete!' : `${percent}% of ${goal} cal goal`;
+                            caloriesChangeEl.className = percent >= 100 ? 'stat-change positive' : 'stat-change';
+                        }
+                        
+                        // Active Minutes (exercise ring)
+                        const activeMinutes = rings.exerciseMinutes || 0;
+                        const activeEl = document.getElementById('dashActiveMinutes');
+                        const activeChangeEl = document.getElementById('dashActiveMinutesChange');
+                        if (activeEl) {
+                            activeEl.textContent = activeMinutes > 0 ? `${activeMinutes}m` : '--';
+                        }
+                        if (activeChangeEl && activeMinutes > 0) {
+                            const goal = rings.exerciseGoal || 30;
+                            const percent = Math.round((activeMinutes / goal) * 100);
+                            activeChangeEl.textContent = percent >= 100 ? '✓ Exercise goal met!' : `${percent}% of ${goal}min goal`;
+                            activeChangeEl.className = percent >= 100 ? 'stat-change positive' : 'stat-change';
+                        }
+                    } else {
+                        // No health data - show prompts
+                        const elements = ['dashSleep', 'dashSteps', 'dashCaloriesBurnedTotal', 'dashActiveMinutes'];
+                        elements.forEach(id => {
+                            const el = document.getElementById(id);
+                            if (el) el.textContent = '--';
+                        });
+                        const changeElements = ['dashSleepChange', 'dashStepsChange', 'dashCaloriesBurnedChange', 'dashActiveMinutesChange'];
+                        changeElements.forEach(id => {
+                            const el = document.getElementById(id);
+                            if (el) {
+                                el.textContent = 'Sync Apple Watch to see data';
+                                el.className = 'stat-change';
+                            }
+                        });
+                    }
+                }, error => {
+                    console.error('Health data error:', error);
+                });
+        }
+        
         // Call when auth is ready
         firebase.auth().onAuthStateChanged(user => {
             if (user) {
                 loadNutritionExerciseData(user.uid);
+                loadHealthData(user.uid);
             }
         });
         
