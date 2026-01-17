@@ -2557,5 +2557,67 @@ router.post("/fix-overlaps", verifyAuth, async (req: Request, res: Response) => 
   }
 });
 
+/**
+ * DELETE /calendars/clear-cache
+ * Clear all cached calendar events from Firestore
+ * This removes demo/test events and forces a fresh sync from connected calendars
+ */
+router.delete("/clear-cache", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    
+    console.log(`Clearing cached calendar events for user ${uid}`);
+    
+    // Get all events in the calendar_events subcollection
+    const eventsRef = db.collection("users").doc(uid).collection("calendar_events");
+    const snapshot = await eventsRef.get();
+    
+    if (snapshot.empty) {
+      res.json({
+        success: true,
+        data: {
+          message: "No cached events to clear",
+          deletedCount: 0
+        }
+      });
+      return;
+    }
+    
+    // Delete in batches (Firestore limit is 500 per batch)
+    const batchSize = 500;
+    let deletedCount = 0;
+    const docs = snapshot.docs;
+    
+    for (let i = 0; i < docs.length; i += batchSize) {
+      const batch = db.batch();
+      const batchDocs = docs.slice(i, i + batchSize);
+      
+      batchDocs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+      
+      await batch.commit();
+      deletedCount += batchDocs.length;
+    }
+    
+    console.log(`✅ Deleted ${deletedCount} cached calendar events for user ${uid}`);
+    
+    res.json({
+      success: true,
+      data: {
+        message: `Successfully cleared ${deletedCount} cached events`,
+        deletedCount
+      }
+    });
+    
+  } catch (error: any) {
+    console.error("Error clearing calendar cache:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to clear calendar cache"
+    });
+  }
+});
+
 export default router;
 

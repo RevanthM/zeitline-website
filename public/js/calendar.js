@@ -3220,6 +3220,49 @@ window.saveQuickCreateEvent = async function(event) {
 };
 
 // =====================================================
+// Clear Calendar Cache Function
+// =====================================================
+
+window.clearCalendarCache = async function() {
+    if (!confirm('This will clear all cached calendar events and remove any demo/test data. Your connected calendars will re-sync fresh. Continue?')) {
+        return;
+    }
+    
+    showLoading('Clearing calendar cache...');
+    
+    try {
+        console.log('🗑️ Clearing calendar cache...');
+        
+        const response = await apiCall('/calendars/clear-cache', {
+            method: 'DELETE'
+        });
+        
+        if (response && response.success) {
+            console.log('✅ Cache cleared:', response.data);
+            
+            // Clear local calendarEvents
+            calendarEvents = {};
+            
+            // Re-render the calendar
+            renderCalendar();
+            
+            hideLoading();
+            showSuccess(`Cleared ${response.data.deletedCount || 0} cached events. Syncing fresh data...`);
+            
+            // Trigger a fresh sync
+            await syncCalendars();
+        } else {
+            hideLoading();
+            showError(response?.error || 'Failed to clear cache');
+        }
+    } catch (error) {
+        console.error('❌ Error clearing cache:', error);
+        hideLoading();
+        showError('Failed to clear calendar cache. Please try again.');
+    }
+};
+
+// =====================================================
 // Sync Calendars Function
 // =====================================================
 
