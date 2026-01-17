@@ -947,112 +947,6 @@ window.connectCalendar = async function(type) {
     }
 }
 
-// Add demo events for testing when no real events are available
-function addDemoEvents() {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth();
-    const day = today.getDate();
-    
-    // Helper to create date string
-    const dateStr = (d) => {
-        const y = d.getFullYear();
-        const m = d.getMonth() + 1;
-        const dd = d.getDate();
-        return `${y}-${String(m).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-    };
-    
-    // Demo events for today
-    const todayStr = dateStr(today);
-    calendarEvents[todayStr] = [
-        {
-            id: 'demo-1',
-            title: 'Team Standup',
-            start: `${todayStr}T09:00:00`,
-            end: `${todayStr}T09:30:00`,
-            calendarType: 'google',
-            calendarName: 'Work Calendar'
-        },
-        {
-            id: 'demo-2',
-            title: 'Project Review Meeting',
-            start: `${todayStr}T14:00:00`,
-            end: `${todayStr}T15:00:00`,
-            calendarType: 'google',
-            calendarName: 'Work Calendar'
-        },
-        {
-            id: 'demo-3',
-            title: 'Gym Session',
-            start: `${todayStr}T17:30:00`,
-            end: `${todayStr}T18:30:00`,
-            calendarType: 'zeitline',
-            calendarName: 'Zeitline'
-        }
-    ];
-    
-    // Demo events for tomorrow
-    const tomorrow = new Date(year, month, day + 1);
-    const tomorrowStr = dateStr(tomorrow);
-    calendarEvents[tomorrowStr] = [
-        {
-            id: 'demo-4',
-            title: 'Doctor Appointment',
-            start: `${tomorrowStr}T10:00:00`,
-            end: `${tomorrowStr}T11:00:00`,
-            calendarType: 'google',
-            calendarName: 'Personal'
-        },
-        {
-            id: 'demo-5',
-            title: 'Lunch with Sarah',
-            start: `${tomorrowStr}T12:30:00`,
-            end: `${tomorrowStr}T13:30:00`,
-            calendarType: 'zeitline',
-            calendarName: 'Zeitline'
-        }
-    ];
-    
-    // Demo all-day event for day after tomorrow
-    const dayAfter = new Date(year, month, day + 2);
-    const dayAfterStr = dateStr(dayAfter);
-    calendarEvents[dayAfterStr] = [
-        {
-            id: 'demo-6',
-            title: 'Conference Day',
-            start: dayAfterStr, // All-day event (no time component)
-            end: dayAfterStr,
-            calendarType: 'outlook',
-            calendarName: 'Work'
-        },
-        {
-            id: 'demo-7',
-            title: 'Keynote Session',
-            start: `${dayAfterStr}T09:00:00`,
-            end: `${dayAfterStr}T10:30:00`,
-            calendarType: 'outlook',
-            calendarName: 'Work'
-        }
-    ];
-    
-    console.log('✅ Added demo events for testing:', Object.keys(calendarEvents).length, 'days');
-}
-
-// Load events from local JSON file first, then fall back to API
-async function loadEventsFromJSON() {
-    try {
-        const response = await fetch('/data/calendar-events.json');
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        const data = await response.json();
-        console.log('✅ Loaded events from local JSON file:', data.events?.length || 0, 'events');
-        return data.events || [];
-    } catch (error) {
-        console.warn('⚠️ Could not load local JSON events:', error.message);
-        return null; // Return null to indicate fallback needed
-    }
-}
 
 // Generate events from onboarding data (AI conversation)
 function generateEventsFromOnboarding(startDate, endDate) {
@@ -1245,25 +1139,10 @@ async function loadCalendarEvents() {
             }
         } catch (apiError) {
             console.warn('⚠️ Could not load events from API:', apiError.message || apiError);
-            // Continue - will try demo events if no API events
+            // Continue with onboarding events only
         }
         
-        // If no events from API (no calendars connected or not logged in), 
-        // fall back to demo JSON for testing/preview purposes
-        if (events.length === 0) {
-            console.log('ℹ️ No events from API, checking for demo events...');
-            const jsonEvents = await loadEventsFromJSON();
-            if (jsonEvents && jsonEvents.length > 0) {
-                // Filter events to the date range we need
-                events = jsonEvents.filter(event => {
-                    const eventDate = new Date(event.start);
-                    return eventDate >= startDate && eventDate <= endDate;
-                });
-                console.log(`📋 Using ${events.length} demo events for preview (filtered from ${jsonEvents.length} total)`);
-            }
-        }
-        
-        // Always try to add events from onboarding data (AI conversation)
+        // Add events from onboarding data (AI conversation)
         // These are generated from the user's routines collected during onboarding
         try {
             const onboardingEvents = generateEventsFromOnboarding(startDate, endDate);
