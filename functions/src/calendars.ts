@@ -60,7 +60,6 @@ const getGoogleRedirectUri = (req?: any) => {
   
   if (isEmulator) {
     // For emulator, use the emulator URL
-    // The emulator runs on port 9000 and uses the format: http://localhost:9000/{project}/{region}/{function}/api/...
     const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || "zeitlineai";
     const region = "us-central1";
     return `http://localhost:9000/${projectId}/${region}/api/calendars/google/callback`;
@@ -71,29 +70,8 @@ const getGoogleRedirectUri = (req?: any) => {
     return process.env.GOOGLE_REDIRECT_URI;
   }
   
-  // For local development with request, construct from request
-  // Note: In emulator, the request path already includes project/region, so we need to extract it
-  if (req && req.headers.host) {
-    const protocol = req.headers['x-forwarded-proto'] || 'http';
-    // Check if this is an emulator request (host contains port 9000)
-    if (req.headers.host.includes(':9000')) {
-      // Extract project and region from the request path if available
-      // The path format is: /{project}/{region}/api/...
-      const pathMatch = req.path?.match(/\/([^\/]+)\/([^\/]+)\/api/);
-      if (pathMatch) {
-        const projectId = pathMatch[1];
-        const region = pathMatch[2];
-        return `${protocol}://${req.headers.host}/${projectId}/${region}/api/calendars/google/callback`;
-      }
-      // Fallback to environment variables
-      const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || "zeitlineai";
-      const region = "us-central1";
-      return `${protocol}://${req.headers.host}/${projectId}/${region}/api/calendars/google/callback`;
-    }
-    return `${protocol}://${req.headers.host}/api/calendars/google/callback`;
-  }
-  
-  // Production fallback
+  // Always use the Cloud Functions URL in production
+  // This ensures the redirect URI matches what's configured in Google Cloud Console
   return "https://us-central1-zeitlineai.cloudfunctions.net/api/calendars/google/callback";
 };
 
