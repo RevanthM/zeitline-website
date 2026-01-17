@@ -108,10 +108,58 @@ async function transcribeWithWhisperFromTrigger(audioUrl: string, filename: stri
   }
   
   console.log(`🎤 Downloading audio for Whisper transcription: ${filename}`);
+  console.log(`   Audio URL: ${audioUrl.substring(0, 100)}...`);
   
   // Download the audio file
   const tempDir = os.tmpdir();
-  const ext = path.extname(filename) || ".m4a";
+  
+  // Determine file extension from multiple sources (prioritize URL over filename)
+  // The URL should have the correct extension since iPhone converts CAF to M4A/WAV before upload
+  let ext = ".m4a"; // default fallback
+  
+  // First, try to get extension from URL (most reliable after conversion)
+  try {
+    const decodedUrl = decodeURIComponent(audioUrl);
+    const urlPath = new URL(decodedUrl).pathname;
+    const urlFilename = urlPath.split("/").pop() || "";
+    const urlExt = path.extname(urlFilename).toLowerCase();
+    
+    console.log(`   URL filename: ${urlFilename}, extension: ${urlExt}`);
+    
+    const supportedFormats = [".m4a", ".wav", ".mp3", ".mp4", ".ogg", ".flac", ".webm", ".oga"];
+    if (urlExt && supportedFormats.includes(urlExt)) {
+      ext = urlExt;
+      console.log(`   Using extension from URL: ${ext}`);
+    } else if (urlExt === ".caf") {
+      // CAF is not supported by Whisper - but the URL might still have .caf if conversion failed
+      // Check if there's an M4A or WAV version in the URL path
+      console.log(`   ⚠️ CAF format detected in URL - this format is not supported by Whisper`);
+      throw new Error("Invalid file format. The audio file is in CAF format which is not supported by Whisper. The iPhone app should convert CAF to M4A or WAV before uploading. Please re-sync this recording from the iPhone app. Supported formats: flac, m4a, mp3, mp4, mpeg, mpga, oga, ogg, wav, webm");
+    }
+  } catch (e) {
+    if ((e as Error).message?.includes("Invalid file format")) {
+      throw e; // Re-throw the CAF format error
+    }
+    console.log(`   Could not parse URL for extension: ${e}`);
+  }
+  
+  // Fallback to filename extension only if URL didn't provide one AND it's not .caf
+  if (ext === ".m4a") {
+    const filenameExt = path.extname(filename).toLowerCase();
+    if (filenameExt && filenameExt !== ".caf") {
+      ext = filenameExt;
+      console.log(`   Using extension from filename: ${ext}`);
+    } else if (filenameExt === ".caf") {
+      // The filename has .caf but we couldn't get a better extension from URL
+      // This means the file might not have been converted properly
+      console.log(`   ⚠️ Filename has .caf extension but URL didn't have a supported format`);
+      console.log(`   Attempting to use .m4a as the URL may have been converted`);
+      // Keep the default .m4a and hope the actual file content is correct
+    }
+  }
+  
+  console.log(`   Final extension: ${ext}`);
+  
   const tempFilePath = path.join(tempDir, `audio_${Date.now()}${ext}`);
   
   const response = await fetch(audioUrl);
@@ -443,7 +491,13 @@ export const onRecordingCreate = functions.firestore
       
       const openai = new OpenAI({ apiKey });
       
+      // Get current date for relative date parsing
+      const currentDate = new Date();
+      const currentDateStr = currentDate.toISOString().split('T')[0];
+      
       const prompt = `You are an AI assistant that analyzes voice memo transcripts to extract actionable items.
+
+Today's date is: ${currentDateStr}
 
 CRITICAL RULES:
 1. ONLY extract items that are EXPLICITLY mentioned in the transcript
@@ -453,7 +507,7 @@ CRITICAL RULES:
 
 This is a voice memo recorded by the user. Extract:
 1. Discussion points and topics that are ACTUALLY mentioned
-2. Tasks, to-dos, and action items - ONLY if explicitly stated (e.g., "you need to do X", "get X done by Y", "I need to X")
+2. Tasks, to-dos, action items, PLANS, EVENTS, and APPOINTMENTS that the user mentions doing or attending
 
 For conversation_points (ONLY if actually discussed):
 - content: What was discussed (exact or close paraphrase)
@@ -463,14 +517,22 @@ For conversation_points (ONLY if actually discussed):
 - mentionedDateTime: ISO date string if a date/time was mentioned, null otherwise
 - location: Location if mentioned, null otherwise
 
-For user_tasks (ONLY if explicitly stated as something to do):
-- title: Clear, actionable task title from the transcript
+For user_tasks - extract if the user mentions ANY of these:
+- Something they need to do ("I need to X", "I have to X", "you need to do X")
+- Plans to attend or go somewhere ("I plan on X", "I'm going to X", "I have X scheduled", "going to X")
+- Events or appointments ("my meeting is at X", "birthday party at X", "appointment at X", "party at X")
+- Deadlines ("due by X", "deadline is X")
+- Social events ("seeing family", "dinner with X", "lunch with X")
+
+Fields for user_tasks:
+- title: Clear, actionable task/event title from the transcript
 - details: Additional context from the transcript
-- location: Where it needs to be done (if mentioned)
-- participants: People involved
-- suggestedDateTime: ISO date string if deadline mentioned (e.g., "Tuesday" = next Tuesday), null otherwise
+- location: Where it takes place (if mentioned)
+- participants: People involved or mentioned (e.g., "family", specific names)
+- suggestedDateTime: ISO date string with time if mentioned (e.g., "tomorrow at 4pm" -> calculate from today's date ${currentDateStr}), null otherwise
 - priority: 1 (high), 2 (medium), 3 (low) based on urgency
-- category: work, personal, meeting, call, errand, health, other
+- category: work, personal, meeting, call, errand, health, event, appointment, social, other
+- isEvent: true if this is an event/appointment/social gathering to attend, false if it's a task to complete
 
 IMPORTANT: If the transcript is empty, unclear, just noise, or contains no actionable content, return:
 {"conversation_points": [], "user_tasks": []}
@@ -543,13 +605,61 @@ ${transcript}`;
         suggestedDate: task.suggestedDateTime || null,
         priority: task.priority || null,
         category: task.category || "other",
+        isEvent: task.isEvent || false,
         audioTimecode: 0,
         sessionId: recordingId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         addedToCalendar: false,
+        calendarEventId: null,
         status: "pending"
       }));
+      
+      // AUTO-CREATE CALENDAR EVENTS for tasks/events with dates
+      let calendarEventsCreated = 0;
+      for (const task of newTasks) {
+        if (task.suggestedDate) {
+          try {
+            const startDate = new Date(task.suggestedDate);
+            // Only create calendar events for valid future or today's dates
+            if (!isNaN(startDate.getTime())) {
+              const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // 1 hour default duration
+              
+              const eventId = `zeitline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+              const eventData = {
+                id: eventId,
+                title: task.title,
+                description: task.details || "",
+                start: startDate.toISOString(),
+                end: endDate.toISOString(),
+                location: task.location || null,
+                calendarType: "zeitline",
+                calendarName: "Zeitline",
+                source: "voice_memo",
+                taskId: task.id,
+                recordingId: recordingId,
+                isEvent: task.isEvent || false,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              };
+              
+              batch.set(
+                db.collection(`users/${userId}/calendar_events`).doc(eventId),
+                eventData
+              );
+              
+              // Update task to mark it as added to calendar
+              task.addedToCalendar = true;
+              task.calendarEventId = eventId;
+              calendarEventsCreated++;
+              
+              console.log(`📅 Auto-created calendar event: ${task.title} for ${startDate.toISOString()}`);
+            }
+          } catch (err) {
+            console.error(`Failed to create calendar event for task ${task.title}:`, err);
+          }
+        }
+      }
       
       batch.set(taskListRef, {
         userId,
@@ -562,12 +672,13 @@ ${transcript}`;
         tasksExtracted: true,
         extractedTaskCount: userTasks.length,
         extractedPointCount: conversationPoints.length,
+        calendarEventsCreated: calendarEventsCreated,
         extractedAt: admin.firestore.FieldValue.serverTimestamp()
       });
       
       await batch.commit();
       
-      console.log(`✅ Auto-extracted ${userTasks.length} tasks and ${conversationPoints.length} points for recording ${recordingId}`);
+      console.log(`✅ Auto-extracted ${userTasks.length} tasks, ${conversationPoints.length} points, and created ${calendarEventsCreated} calendar events for recording ${recordingId}`);
       
     } catch (error) {
       console.error("Error auto-extracting tasks:", error);
@@ -656,7 +767,13 @@ export const onRecordingUpdate = functions.firestore
         const openai = new OpenAI({ apiKey });
         const transcript = after.transcript;
         
+        // Get current date for relative date parsing
+        const currentDate = new Date();
+        const currentDateStr = currentDate.toISOString().split('T')[0];
+        
         const prompt = `You are an AI assistant that analyzes voice memo transcripts to extract actionable items.
+
+Today's date is: ${currentDateStr}
 
 CRITICAL RULES:
 1. ONLY extract items that are EXPLICITLY mentioned in the transcript
@@ -666,7 +783,32 @@ CRITICAL RULES:
 
 This is a voice memo recorded by the user. Extract:
 1. Discussion points and topics that are ACTUALLY mentioned
-2. Tasks, to-dos, and action items - ONLY if explicitly stated (e.g., "you need to do X", "get X done by Y", "I need to X")
+2. Tasks, to-dos, action items, PLANS, EVENTS, and APPOINTMENTS that the user mentions doing or attending
+
+For conversation_points (ONLY if actually discussed):
+- content: What was discussed (exact or close paraphrase)
+- type: user_task, meeting, event, deadline, reminder, decision, question, follow_up, information, idea, other
+- speaker: Who said it (if identifiable, otherwise null)
+- mentionedPeople: Array of people mentioned
+- mentionedDateTime: ISO date string if a date/time was mentioned, null otherwise
+- location: Location if mentioned, null otherwise
+
+For user_tasks - extract if the user mentions ANY of these:
+- Something they need to do ("I need to X", "I have to X", "you need to do X")
+- Plans to attend or go somewhere ("I plan on X", "I'm going to X", "I have X scheduled", "going to X")
+- Events or appointments ("my meeting is at X", "birthday party at X", "appointment at X", "party at X")
+- Deadlines ("due by X", "deadline is X")
+- Social events ("seeing family", "dinner with X", "lunch with X")
+
+Fields for user_tasks:
+- title: Clear, actionable task/event title from the transcript
+- details: Additional context from the transcript
+- location: Where it takes place (if mentioned)
+- participants: People involved or mentioned (e.g., "family", specific names)
+- suggestedDateTime: ISO date string with time if mentioned (e.g., "tomorrow at 4pm" -> calculate from today's date ${currentDateStr}), null otherwise
+- priority: 1 (high), 2 (medium), 3 (low) based on urgency
+- category: work, personal, meeting, call, errand, health, event, appointment, social, other
+- isEvent: true if this is an event/appointment/social gathering to attend, false if it's a task to complete
 
 IMPORTANT: If the transcript is empty, unclear, just noise, or contains no actionable content, return:
 {"conversation_points": [], "user_tasks": []}
@@ -737,12 +879,60 @@ ${transcript}`;
           suggestedDate: task.suggestedDateTime || null,
           priority: task.priority || null,
           category: task.category || "other",
+          isEvent: task.isEvent || false,
           sessionId: recordingId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           addedToCalendar: false,
+          calendarEventId: null,
           status: "pending"
         }));
+        
+        // AUTO-CREATE CALENDAR EVENTS for tasks/events with dates
+        let calendarEventsCreated = 0;
+        for (const task of newTasks) {
+          if (task.suggestedDate) {
+            try {
+              const startDate = new Date(task.suggestedDate);
+              // Only create calendar events for valid future or today's dates
+              if (!isNaN(startDate.getTime())) {
+                const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // 1 hour default duration
+                
+                const eventId = `zeitline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const eventData = {
+                  id: eventId,
+                  title: task.title,
+                  description: task.details || "",
+                  start: startDate.toISOString(),
+                  end: endDate.toISOString(),
+                  location: task.location || null,
+                  calendarType: "zeitline",
+                  calendarName: "Zeitline",
+                  source: "voice_memo",
+                  taskId: task.id,
+                  recordingId: recordingId,
+                  isEvent: task.isEvent || false,
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+                
+                batch.set(
+                  db.collection(`users/${userId}/calendar_events`).doc(eventId),
+                  eventData
+                );
+                
+                // Update task to mark it as added to calendar
+                task.addedToCalendar = true;
+                task.calendarEventId = eventId;
+                calendarEventsCreated++;
+                
+                console.log(`📅 Auto-created calendar event: ${task.title} for ${startDate.toISOString()}`);
+              }
+            } catch (err) {
+              console.error(`Failed to create calendar event for task ${task.title}:`, err);
+            }
+          }
+        }
         
         batch.set(taskListRef, {
           userId,
@@ -755,12 +945,13 @@ ${transcript}`;
           tasksExtracted: true,
           extractedTaskCount: userTasks.length,
           extractedPointCount: conversationPoints.length,
+          calendarEventsCreated: calendarEventsCreated,
           extractedAt: admin.firestore.FieldValue.serverTimestamp()
         });
         
         await batch.commit();
         
-        console.log(`✅ Auto-extracted ${userTasks.length} tasks from updated recording ${recordingId}`);
+        console.log(`✅ Auto-extracted ${userTasks.length} tasks, ${conversationPoints.length} points, and created ${calendarEventsCreated} calendar events from updated recording ${recordingId}`);
         
       } catch (error) {
         console.error("Error auto-extracting tasks on update:", error);

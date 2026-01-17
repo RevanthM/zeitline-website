@@ -1311,6 +1311,17 @@ class RecordingsManager {
      */
     async startRecording() {
         try {
+            // Check if user is logged in first
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                this.showToast('⚠️ Please sign in to record audio', 'warning');
+                // Redirect to login after a short delay
+                setTimeout(() => {
+                    window.location.href = '/login.html?redirect=' + encodeURIComponent(window.location.pathname);
+                }, 2000);
+                return;
+            }
+            
             // Request microphone access
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: {
