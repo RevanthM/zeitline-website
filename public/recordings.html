@@ -874,23 +874,57 @@
             <div class="recordings-header">
                 <div>
                     <h1>Voice Recordings</h1>
-                    <p style="color: var(--text-secondary); margin-top: 0.25rem;">Audio notes captured from your Apple Watch</p>
+                    <p style="color: var(--text-secondary); margin-top: 0.25rem;">Audio notes from your Apple Watch and web browser</p>
                 </div>
-                <div class="recordings-stats">
-                    <div class="stat-item">
-                        <div class="stat-value" id="totalRecordings">0</div>
-                        <div class="stat-label">Recordings</div>
+                <div style="display: flex; align-items: center; gap: 1.5rem;">
+                    <div class="recordings-stats">
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalRecordings">0</div>
+                            <div class="stat-label">Recordings</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="totalDuration">0m</div>
+                            <div class="stat-label">Total Time</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="transcribedCount">0</div>
+                            <div class="stat-label">Transcribed</div>
+                        </div>
                     </div>
-                    <div class="stat-item">
-                        <div class="stat-value" id="totalDuration">0m</div>
-                        <div class="stat-label">Total Time</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-value" id="transcribedCount">0</div>
-                        <div class="stat-label">Transcribed</div>
-                    </div>
+                    <button class="btn btn-primary" id="recordBtn" style="display: flex; align-items: center; gap: 0.5rem;">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <circle cx="12" cy="12" r="3" fill="currentColor"/>
+                        </svg>
+                        Record
+                    </button>
                 </div>
             </div>
+            
+            <!-- Recording UI -->
+            <div id="recordingUI" style="display: none; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem; flex: 1;">
+                        <div style="width: 48px; height: 48px; border-radius: 50%; background: rgba(239, 68, 68, 0.2); display: flex; align-items: center; justify-content: center; animation: pulse 2s infinite;">
+                            <div style="width: 24px; height: 24px; border-radius: 50%; background: #ef4444;"></div>
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; margin-bottom: 0.25rem;">Recording...</div>
+                            <div style="font-size: 0.85rem; color: var(--text-muted); font-variant-numeric: tabular-nums;" id="recordingTimer">0:00</div>
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary" id="stopRecordingBtn" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #ef4444;">
+                        Stop Recording
+                    </button>
+                </div>
+            </div>
+            
+            <style>
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                }
+            </style>
             
             <!-- Filters -->
             <div class="filters-bar">
@@ -935,8 +969,8 @@
                     <div class="empty-state" id="emptyState" style="display: none;">
                         <div class="empty-icon">🎙️</div>
                         <h2>No recordings yet</h2>
-                        <p>Start recording audio notes on your Apple Watch. They'll appear here automatically!</p>
-                        <a href="#" class="btn btn-secondary">Learn how to record</a>
+                        <p>Start recording audio notes on your Apple Watch or use the Record button above to record from your browser.</p>
+                        <button class="btn btn-secondary" id="recordFromEmptyBtn" style="margin-top: 1rem;">Start Recording</button>
                     </div>
                 </div>
                 

@@ -199,6 +199,36 @@ document.addEventListener("DOMContentLoaded", () => {
 function initializeOnboarding() {
   renderStep(currentStep);
   updateProgress();
+  
+  // Set up browser back button handling
+  setupBrowserBackButton();
+}
+
+// Handle browser back button to go to dashboard
+function setupBrowserBackButton() {
+  // Push initial state so we can detect back button
+  history.pushState({ step: currentStep, onboarding: true }, '', window.location.href);
+  
+  window.addEventListener('popstate', (event) => {
+    // User pressed browser back button - go to dashboard
+    goToDashboard();
+  });
+}
+
+// Navigate to dashboard (skip/finish later)
+function goToDashboard() {
+  // Save current progress before leaving
+  saveOnboardingProgress();
+  
+  // Redirect to dashboard
+  window.location.href = '/dashboard.html';
+}
+
+// Save current onboarding progress to localStorage
+function saveOnboardingProgress() {
+  localStorage.setItem('zeitline_profile', JSON.stringify(onboardingData));
+  localStorage.setItem('zeitline_onboarding_step', currentStep.toString());
+  // Don't mark as complete - user is leaving early
 }
 
 function updateProgress() {
@@ -967,6 +997,9 @@ function prevStep() {
     currentStep--;
     renderStep(currentStep);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  } else {
+    // On step 1, go to dashboard
+    goToDashboard();
   }
 }
 

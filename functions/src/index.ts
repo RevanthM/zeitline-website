@@ -132,12 +132,36 @@ async function transcribeWithWhisperFromTrigger(audioUrl: string, filename: stri
   }
   
   // Transcribe with Whisper
+  const { toFile } = await import("openai");
   const openai = new OpenAI({ apiKey });
-  const fileStream = fs.createReadStream(tempFilePath);
   
   try {
+    // Read file as buffer and convert using toFile helper for OpenAI SDK v6+
+    const fileBuffer = fs.readFileSync(tempFilePath);
+    const filename = path.basename(tempFilePath);
+    const fileExt = path.extname(tempFilePath).toLowerCase();
+    
+    // Map file extensions to MIME types for proper content-type handling
+    const mimeTypes: Record<string, string> = {
+      ".flac": "audio/flac",
+      ".mp3": "audio/mpeg",
+      ".mp4": "audio/mp4",
+      ".mpeg": "audio/mpeg",
+      ".mpga": "audio/mpeg",
+      ".m4a": "audio/mp4",
+      ".ogg": "audio/ogg",
+      ".oga": "audio/ogg",
+      ".wav": "audio/wav",
+      ".webm": "audio/webm",
+    };
+    const contentType = mimeTypes[fileExt] || "audio/mpeg";
+    
+    console.log(`   Using content type: ${contentType} for file: ${filename}`);
+    
+    const file = await toFile(fileBuffer, filename, { type: contentType });
+    
     const transcription = await openai.audio.transcriptions.create({
-      file: fileStream,
+      file: file,
       model: "whisper-1",
       language: "en",
       response_format: "text",

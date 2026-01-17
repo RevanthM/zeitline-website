@@ -703,6 +703,9 @@ async function initializeApp() {
     // Load saved data
     loadSavedData();
     
+    // Set up browser back button handling
+    setupBrowserBackButton();
+    
     // Set up event listeners
     setupEventListeners();
     
@@ -1423,6 +1426,18 @@ async function completeOnboarding() {
 
 function goToDashboard() {
     window.location.href = '/dashboard.html';
+}
+
+// Handle browser back button to go to dashboard
+function setupBrowserBackButton() {
+    // Push initial state so we can detect back button
+    history.pushState({ onboarding: true }, '', window.location.href);
+    
+    window.addEventListener('popstate', (event) => {
+        // User pressed browser back button - save and go to dashboard
+        saveData();
+        window.location.href = '/dashboard.html';
+    });
 }
 
 function editAnswers() {

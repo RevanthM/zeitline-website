@@ -4,7 +4,7 @@
 import { Router, Request, Response } from "express";
 import * as admin from "firebase-admin";
 import { verifyAuth } from "./middleware/auth";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -775,48 +775,81 @@ router.post("/:recordingId/convert", verifyAuth, async (req: Request, res: Respo
 
 /**
  * Download audio file from URL to temp storage
+ * Returns the path to the downloaded file
  */
 async function downloadAudioFile(url: string, filename: string): Promise<string> {
   const tempDir = os.tmpdir();
   
-  // Try to get extension from URL first (more reliable), then filename
-  let ext = ".m4a"; // default
+  // Try to get extension from multiple sources:
+  // 1. URL path (most reliable for Firebase Storage)
+  // 2. Filename from database
+  // 3. Content-Type header
+  let ext = ".m4a"; // default fallback
   
-  // Check URL for extension
-  const urlPath = new URL(url).pathname;
-  const urlExt = path.extname(urlPath);
-  if (urlExt && [".m4a", ".wav", ".mp3", ".mp4", ".ogg", ".flac", ".webm"].includes(urlExt.toLowerCase())) {
-    ext = urlExt.toLowerCase();
-  } else if (filename) {
+  // Decode the URL to handle encoded characters
+  const decodedUrl = decodeURIComponent(url);
+  
+  // Check URL for extension (handle Firebase Storage URLs which have the filename in the path)
+  try {
+    const urlPath = new URL(decodedUrl).pathname;
+    // Firebase Storage URLs look like: /v0/b/bucket/o/path%2Fto%2Ffile.m4a
+    const urlFilename = urlPath.split("/").pop() || "";
+    const urlExt = path.extname(urlFilename);
+    
+    console.log(`   URL path: ${urlPath}`);
+    console.log(`   URL filename: ${urlFilename}`);
+    console.log(`   URL extension: ${urlExt}`);
+    
+    if (urlExt && [".m4a", ".wav", ".mp3", ".mp4", ".ogg", ".flac", ".webm", ".caf", ".oga"].includes(urlExt.toLowerCase())) {
+      ext = urlExt.toLowerCase();
+    }
+  } catch (e) {
+    console.log(`   Could not parse URL: ${e}`);
+  }
+  
+  // If no extension from URL, try the filename from database
+  if (ext === ".m4a" && filename) {
     const filenameExt = path.extname(filename);
     if (filenameExt) {
       ext = filenameExt.toLowerCase();
+      console.log(`   Using extension from filename: ${ext}`);
     }
-  }
-  
-  // Map CAF to WAV since Whisper doesn't support CAF
-  if (ext === ".caf") {
-    console.log("⚠️ CAF format detected, this may not transcribe properly");
-    ext = ".caf"; // Keep as-is but warn
   }
   
   const tempFilePath = path.join(tempDir, `audio_${Date.now()}${ext}`);
 
-  console.log(`📥 Downloading audio from ${url.substring(0, 80)}...`);
-  console.log(`   Extension: ${ext}, Target: ${tempFilePath}`);
+  console.log(`📥 Downloading audio from ${url.substring(0, 100)}...`);
+  console.log(`   Detected extension: ${ext}`);
+  console.log(`   Target path: ${tempFilePath}`);
 
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to download audio: ${response.status} ${response.statusText}`);
   }
 
+  // Log content-type header
+  const contentType = response.headers.get("content-type");
+  console.log(`   Content-Type: ${contentType}`);
+
   // Convert response to buffer using arrayBuffer (native fetch)
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
+  
+  if (buffer.length === 0) {
+    throw new Error("Downloaded file is empty");
+  }
+  
   fs.writeFileSync(tempFilePath, buffer);
 
   const stats = fs.statSync(tempFilePath);
   console.log(`✅ Downloaded ${stats.size} bytes to ${tempFilePath}`);
+
+  // Warn about potentially problematic formats
+  if (ext === ".caf") {
+    console.log(`⚠️ WARNING: CAF format detected. This format is not supported by Whisper.`);
+    console.log(`   The iOS app should have converted this to M4A or WAV before uploading.`);
+    console.log(`   Please re-sync this recording from the iPhone app.`);
+  }
 
   return tempFilePath;
 }
@@ -824,20 +857,17 @@ async function downloadAudioFile(url: string, filename: string): Promise<string>
 /**
  * Transcribe audio file using OpenAI Whisper API
  * Supported formats: flac, mp3, mp4, mpeg, mpga, m4a, ogg, wav, webm
+ * Will attempt to convert unsupported formats (like CAF) to WAV first
  */
 async function transcribeWithWhisper(filePath: string): Promise<string> {
   const openai = getOpenAIClient();
 
-  const fileExt = path.extname(filePath).toLowerCase();
-  const supportedFormats = [".flac", ".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".ogg", ".wav", ".webm"];
+  let fileExt = path.extname(filePath).toLowerCase();
+  const supportedFormats = [".flac", ".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".ogg", ".wav", ".webm", ".oga"];
+  let actualFilePath = filePath;
   
   console.log(`🎤 Transcribing with Whisper: ${filePath}`);
   console.log(`   File extension: ${fileExt}`);
-
-  // Warn if format might not be supported
-  if (!supportedFormats.includes(fileExt)) {
-    console.log(`⚠️ Format ${fileExt} may not be supported by Whisper. Supported: ${supportedFormats.join(", ")}`);
-  }
 
   // Check file exists and has content
   const stats = fs.statSync(filePath);
@@ -852,12 +882,46 @@ async function transcribeWithWhisper(filePath: string): Promise<string> {
     console.log(`⚠️ File is very small (${stats.size} bytes), may not contain enough audio`);
   }
 
-  // Create a readable stream for the file
-  const fileStream = fs.createReadStream(filePath);
+  // Handle unsupported formats - CAF files from Apple Watch
+  if (!supportedFormats.includes(fileExt)) {
+    console.log(`⚠️ Format ${fileExt} not directly supported by Whisper. Attempting conversion...`);
+    
+    // For CAF files, we need to tell the user to re-sync from iPhone
+    // Cloud Functions don't have ffmpeg by default
+    if (fileExt === ".caf") {
+      throw new Error(`Invalid file format. The audio file is in CAF format which is not supported. Please re-sync this recording from the iPhone app which will convert it to a compatible format. Supported formats: ${supportedFormats.map(f => f.replace(".", "")).join(", ")}`);
+    }
+    
+    // For other unsupported formats, try sending anyway and let Whisper handle it
+    console.log(`   Attempting to transcribe ${fileExt} file directly...`);
+  }
 
   try {
+    // Read file as buffer and convert using toFile helper for OpenAI SDK v6+
+    const fileBuffer = fs.readFileSync(actualFilePath);
+    const filename = path.basename(actualFilePath);
+    
+    // Map file extensions to MIME types for proper content-type handling
+    const mimeTypes: Record<string, string> = {
+      ".flac": "audio/flac",
+      ".mp3": "audio/mpeg",
+      ".mp4": "audio/mp4",
+      ".mpeg": "audio/mpeg",
+      ".mpga": "audio/mpeg",
+      ".m4a": "audio/mp4",
+      ".ogg": "audio/ogg",
+      ".oga": "audio/ogg",
+      ".wav": "audio/wav",
+      ".webm": "audio/webm",
+    };
+    const contentType = mimeTypes[fileExt] || "audio/mpeg";
+    
+    console.log(`   Using content type: ${contentType} for file: ${filename}`);
+    
+    const file = await toFile(fileBuffer, filename, { type: contentType });
+    
     const response = await openai.audio.transcriptions.create({
-      file: fileStream,
+      file: file,
       model: "whisper-1",
       language: "en", // Can be made dynamic based on user preferences
       response_format: "text",
@@ -878,9 +942,9 @@ async function transcribeWithWhisper(filePath: string): Promise<string> {
   } catch (error: any) {
     console.error("❌ Whisper API error:", error.message || error);
 
-    // Check for specific error types
+    // Check for specific error types and provide helpful messages
     if (error.message?.includes("Invalid file format") || error.message?.includes("could not be decoded")) {
-      throw new Error(`Invalid audio format (${fileExt}). Whisper supports: ${supportedFormats.join(", ")}`);
+      throw new Error(`Invalid file format. Supported formats: ${supportedFormats.map(f => f.replace(".", "")).join(", ")}`);
     }
 
     if (error.message?.includes("File is too short") || error.message?.includes("too short")) {
@@ -888,7 +952,7 @@ async function transcribeWithWhisper(filePath: string): Promise<string> {
     }
     
     if (error.message?.includes("Could not process audio")) {
-      throw new Error(`Could not process audio file. The file may be corrupted or in an unsupported format (${fileExt})`);
+      throw new Error(`Could not process audio file. The file may be corrupted or in an unsupported format. Please try re-syncing from the iPhone app.`);
     }
 
     throw error;

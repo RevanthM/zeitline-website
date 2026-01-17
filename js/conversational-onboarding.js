@@ -682,12 +682,35 @@ let isTyping = false;
 let recognition = null;
 let isListening = false;
 
+// ==================== BROWSER BACK BUTTON ====================
+
+// Handle browser back button to go to dashboard
+function setupBrowserBackButton() {
+    // Push initial state so we can detect back button
+    history.pushState({ onboarding: true }, '', window.location.href);
+    
+    window.addEventListener('popstate', (event) => {
+        // User pressed browser back button - go to dashboard
+        goToDashboard();
+    });
+}
+
+// Navigate to dashboard (skip/finish later)
+function goToDashboard() {
+    // Save current progress before leaving
+    saveAllData();
+    
+    // Redirect to dashboard
+    window.location.href = '/dashboard.html';
+}
+
 // ==================== INITIALIZATION ====================
 
 document.addEventListener("DOMContentLoaded", () => {
     loadSavedData();
     initializeSpeechRecognition();
     initializeEventListeners();
+    setupBrowserBackButton();
     
     // Check auth state
     if (typeof firebase !== "undefined" && typeof auth !== "undefined") {

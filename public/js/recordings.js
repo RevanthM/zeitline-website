@@ -12,6 +12,13 @@ class RecordingsManager {
         this.sortOrder = 'newest'; // newest, oldest
         this.timeFilter = 'all'; // all, morning, afternoon, evening, night
         
+        // Recording state
+        this.isRecording = false;
+        this.mediaRecorder = null;
+        this.audioChunks = [];
+        this.recordingStartTime = null;
+        this.recordingTimer = null;
+        
         this.init();
     }
     
@@ -118,6 +125,22 @@ class RecordingsManager {
         const retranscribeBtn = document.getElementById('retranscribeBtn');
         if (retranscribeBtn) {
             retranscribeBtn.addEventListener('click', () => this.transcribeWithWhisper(true));
+        }
+        
+        // Recording buttons
+        const recordBtn = document.getElementById('recordBtn');
+        if (recordBtn) {
+            recordBtn.addEventListener('click', () => this.startRecording());
+        }
+        
+        const stopRecordingBtn = document.getElementById('stopRecordingBtn');
+        if (stopRecordingBtn) {
+            stopRecordingBtn.addEventListener('click', () => this.stopRecording());
+        }
+        
+        const recordFromEmptyBtn = document.getElementById('recordFromEmptyBtn');
+        if (recordFromEmptyBtn) {
+            recordFromEmptyBtn.addEventListener('click', () => this.startRecording());
         }
     }
     
@@ -359,29 +382,58 @@ class RecordingsManager {
                 
                 // Check if this is a CAF file (not supported by browsers)
                 const isCAF = recording.filename?.toLowerCase().endsWith('.caf') || 
-                              recording.audioUrl?.includes('.caf');
+                              recording.audioUrl?.toLowerCase().includes('.caf') ||
+                              recording.audioUrl?.toLowerCase().includes('%2fcaf');
+                
+                // Update waveform to show unavailable state
+                const waveform = document.getElementById('waveform');
                 
                 if (isCAF || error?.code === 4) {
                     // Show message about unsupported format
-                    this.showToast('⚠️ Audio format not supported in browser. Re-sync from iPhone app to convert.', 'warning');
+                    this.showToast('⚠️ Audio format not supported. Please re-sync from iPhone app to convert.', 'warning');
                     
-                    // Update waveform to show unavailable state
-                    const waveform = document.getElementById('waveform');
                     if (waveform) {
-                        waveform.innerHTML = '<p style="color: var(--text-muted); font-size: 0.8rem;">Audio format requires conversion</p>';
+                        waveform.innerHTML = `
+                            <div style="text-align: center; padding: 0.5rem;">
+                                <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;">Audio format requires conversion</p>
+                                <p style="color: var(--text-muted); font-size: 0.7rem; margin-top: 0.25rem; opacity: 0.7;">Re-sync from iPhone to fix</p>
+                            </div>
+                        `;
                     }
                 } else {
                     // Provide more specific error messages
                     let errorMsg = 'Unable to load audio file';
+                    let helpText = '';
                     if (error) {
                         switch (error.code) {
-                            case 1: errorMsg = 'Audio loading aborted'; break;
-                            case 2: errorMsg = 'Network error loading audio'; break;
-                            case 3: errorMsg = 'Audio decoding failed'; break;
-                            case 4: errorMsg = 'Audio format not supported'; break;
+                            case 1: 
+                                errorMsg = 'Audio loading aborted'; 
+                                helpText = 'Try refreshing the page';
+                                break;
+                            case 2: 
+                                errorMsg = 'Network error loading audio'; 
+                                helpText = 'Check your connection';
+                                break;
+                            case 3: 
+                                errorMsg = 'Audio decoding failed'; 
+                                helpText = 'File may be corrupted';
+                                break;
+                            case 4: 
+                                errorMsg = 'Audio format not supported'; 
+                                helpText = 'Re-sync from iPhone app';
+                                break;
                         }
                     }
-                    this.showToast(errorMsg, 'error');
+                    this.showToast(`${errorMsg}. ${helpText}`, 'error');
+                    
+                    if (waveform) {
+                        waveform.innerHTML = `
+                            <div style="text-align: center; padding: 0.5rem;">
+                                <p style="color: var(--text-muted); font-size: 0.8rem; margin: 0;">${errorMsg}</p>
+                                ${helpText ? `<p style="color: var(--text-muted); font-size: 0.7rem; margin-top: 0.25rem; opacity: 0.7;">${helpText}</p>` : ''}
+                            </div>
+                        `;
+                    }
                 }
             };
             
@@ -1252,6 +1304,331 @@ class RecordingsManager {
         if (bytes < 1024) return `${bytes} B`;
         if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    
+    /**
+     * Start recording audio from the user's microphone
+     */
+    async startRecording() {
+        try {
+            // Request microphone access
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                } 
+            });
+            
+            // Check if MediaRecorder is supported
+            if (!window.MediaRecorder) {
+                throw new Error('MediaRecorder API is not supported in this browser');
+            }
+            
+            // Determine the best audio format
+            let mimeType = 'audio/webm';
+            const types = [
+                'audio/webm;codecs=opus',
+                'audio/webm',
+                'audio/mp4',
+                'audio/ogg;codecs=opus'
+            ];
+            
+            for (const type of types) {
+                if (MediaRecorder.isTypeSupported(type)) {
+                    mimeType = type;
+                    break;
+                }
+            }
+            
+            console.log('Using audio format:', mimeType);
+            
+            // Create MediaRecorder
+            this.mediaRecorder = new MediaRecorder(stream, { mimeType });
+            this.audioChunks = [];
+            
+            // Handle data available
+            this.mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    this.audioChunks.push(event.data);
+                }
+            };
+            
+            // Handle recording stop
+            this.mediaRecorder.onstop = () => {
+                stream.getTracks().forEach(track => track.stop());
+                this.processRecording();
+            };
+            
+            // Handle errors
+            this.mediaRecorder.onerror = (event) => {
+                console.error('MediaRecorder error:', event);
+                this.showToast('Recording error occurred', 'error');
+                this.stopRecording();
+            };
+            
+            // Start recording
+            this.mediaRecorder.start(1000); // Collect data every second
+            this.isRecording = true;
+            this.recordingStartTime = Date.now();
+            
+            // Update UI
+            const recordingUI = document.getElementById('recordingUI');
+            const recordBtn = document.getElementById('recordBtn');
+            
+            if (recordingUI) recordingUI.style.display = 'flex';
+            if (recordBtn) {
+                recordBtn.disabled = true;
+                recordBtn.style.opacity = '0.5';
+            }
+            
+            // Start timer
+            this.startRecordingTimer();
+            
+            this.showToast('🎤 Recording started', 'success');
+            
+        } catch (error) {
+            console.error('Error starting recording:', error);
+            
+            let errorMessage = 'Failed to start recording';
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                errorMessage = 'Microphone permission denied. Please allow microphone access and try again.';
+            } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+                errorMessage = 'No microphone found. Please connect a microphone and try again.';
+            } else if (error.name === 'NotSupportedError') {
+                errorMessage = 'Recording is not supported in this browser. Please use Chrome, Firefox, or Edge.';
+            }
+            
+            this.showToast(errorMessage, 'error');
+        }
+    }
+    
+    /**
+     * Stop the current recording
+     */
+    stopRecording() {
+        if (!this.isRecording || !this.mediaRecorder) {
+            return;
+        }
+        
+        // Stop recording
+        if (this.mediaRecorder.state !== 'inactive') {
+            this.mediaRecorder.stop();
+        }
+        
+        this.isRecording = false;
+        
+        // Stop timer
+        if (this.recordingTimer) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
+        }
+        
+        // Update UI
+        const recordingUI = document.getElementById('recordingUI');
+        const recordBtn = document.getElementById('recordBtn');
+        
+        if (recordingUI) recordingUI.style.display = 'none';
+        if (recordBtn) {
+            recordBtn.disabled = false;
+            recordBtn.style.opacity = '1';
+        }
+        
+        this.showToast('⏹️ Recording stopped. Processing...', 'info');
+    }
+    
+    /**
+     * Start the recording timer
+     */
+    startRecordingTimer() {
+        const timerEl = document.getElementById('recordingTimer');
+        if (!timerEl) return;
+        
+        this.recordingTimer = setInterval(() => {
+            if (!this.recordingStartTime) return;
+            
+            const elapsed = Math.floor((Date.now() - this.recordingStartTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            
+            timerEl.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }, 100);
+    }
+    
+    /**
+     * Process the recorded audio and upload to Firebase
+     */
+    async processRecording() {
+        if (this.audioChunks.length === 0) {
+            this.showToast('No audio data recorded', 'error');
+            return;
+        }
+        
+        try {
+            // Determine the actual MIME type used during recording
+            // Different browsers support different formats:
+            // - Chrome/Edge: audio/webm;codecs=opus
+            // - Firefox: audio/ogg;codecs=opus
+            // - Safari: audio/mp4 (may require polyfill)
+            const mimeType = this.mediaRecorder?.mimeType || 'audio/webm';
+            
+            // Map MIME types to file extensions
+            const mimeToExt = {
+                'audio/webm': '.webm',
+                'audio/webm;codecs=opus': '.webm',
+                'audio/ogg': '.ogg',
+                'audio/ogg;codecs=opus': '.ogg',
+                'audio/mp4': '.m4a',
+                'audio/mpeg': '.mp3'
+            };
+            
+            const fileExt = mimeToExt[mimeType] || '.webm';
+            const contentType = mimeType.split(';')[0]; // Remove codec info for storage
+            
+            // Create blob from audio chunks using the actual MIME type
+            const audioBlob = new Blob(this.audioChunks, { type: mimeType });
+            const duration = (Date.now() - this.recordingStartTime) / 1000;
+            
+            console.log('Recording processed:', {
+                size: audioBlob.size,
+                duration: duration,
+                chunks: this.audioChunks.length,
+                mimeType: mimeType,
+                fileExtension: fileExt,
+                contentType: contentType
+            });
+            
+            // Check authentication
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                throw new Error('Please sign in to save recordings');
+            }
+            
+            const userId = user.uid;
+            
+            // Generate filename with correct extension based on MIME type
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            const filename = `web-recording-${timestamp}${fileExt}`;
+            
+            // Upload to Firebase Storage
+            this.showToast('📤 Uploading recording...', 'info');
+            
+            const storage = firebase.storage();
+            const storageRef = storage.ref(`recordings/${userId}/${filename}`);
+            
+            // Upload blob with the correct content type
+            const uploadTask = storageRef.put(audioBlob, {
+                contentType: contentType,
+                customMetadata: {
+                    source: 'web',
+                    recordedAt: new Date().toISOString(),
+                    originalMimeType: mimeType
+                }
+            });
+            
+            // Wait for upload to complete
+            const snapshot = await uploadTask;
+            const downloadURL = await snapshot.ref.getDownloadURL();
+            
+            console.log('Audio uploaded:', downloadURL);
+            
+            // Create Firestore document
+            const db = firebase.firestore();
+            const recordingData = {
+                filename: filename,
+                recordedAt: firebase.firestore.Timestamp.now(),
+                duration: duration,
+                fileSize: audioBlob.size,
+                transcript: null,
+                audioUrl: downloadURL,
+                watchFilename: filename,
+                createdAt: firebase.firestore.Timestamp.now(),
+                updatedAt: firebase.firestore.Timestamp.now(),
+                isTranscribing: false,
+                source: 'web'
+            };
+            
+            const docRef = await db.collection('users').doc(userId)
+                .collection('recordings')
+                .add(recordingData);
+            
+            console.log('Recording saved to Firestore:', docRef.id);
+            
+            // Reload recordings
+            await this.loadRecordings();
+            this.updateStats();
+            
+            // Select the new recording
+            const newRecording = {
+                id: docRef.id,
+                ...recordingData,
+                recordedAt: recordingData.recordedAt.toDate()
+            };
+            this.selectRecording(newRecording);
+            
+            this.showToast('✅ Recording saved! Transcription starting...', 'success');
+            
+            // The Firestore trigger (onRecordingCreate) handles automatic transcription
+            // Set up a listener to watch for transcription updates
+            const recordingId = docRef.id;
+            const unsubscribe = db.collection('users').doc(userId)
+                .collection('recordings').doc(recordingId)
+                .onSnapshot((doc) => {
+                    if (!doc.exists) return;
+                    
+                    const data = doc.data();
+                    console.log('Recording updated:', { transcript: !!data.transcript, isTranscribing: data.isTranscribing });
+                    
+                    if (data.transcript && data.transcript.length > 0) {
+                        // Transcription complete - update the UI
+                        unsubscribe(); // Stop listening
+                        
+                        // Update current recording
+                        if (this.currentRecording && this.currentRecording.id === recordingId) {
+                            this.currentRecording.transcript = data.transcript;
+                            this.currentRecording.transcriptionModel = data.transcriptionModel || 'whisper-1';
+                            
+                            // Update transcript display
+                            const transcriptText = document.getElementById('transcriptText');
+                            const noTranscript = document.getElementById('noTranscript');
+                            
+                            if (transcriptText) {
+                                transcriptText.style.display = 'block';
+                                transcriptText.textContent = data.transcript;
+                            }
+                            if (noTranscript) noTranscript.style.display = 'none';
+                        }
+                        
+                        // Update recordings list
+                        const recIndex = this.recordings.findIndex(r => r.id === recordingId);
+                        if (recIndex !== -1) {
+                            this.recordings[recIndex].transcript = data.transcript;
+                        }
+                        
+                        this.renderRecordings();
+                        this.updateStats();
+                        this.showToast('✅ Transcription complete!', 'success');
+                    } else if (data.isTranscribing) {
+                        this.showToast('🎤 Transcription in progress...', 'info');
+                    }
+                }, (error) => {
+                    console.error('Error listening to recording updates:', error);
+                    unsubscribe();
+                });
+            
+            // Stop listening after 60 seconds as a safety measure
+            setTimeout(() => {
+                unsubscribe();
+            }, 60000);
+            
+        } catch (error) {
+            console.error('Error processing recording:', error);
+            this.showToast(`❌ Failed to save recording: ${error.message}`, 'error');
+        } finally {
+            // Reset state
+            this.audioChunks = [];
+            this.recordingStartTime = null;
+        }
     }
 }
 
