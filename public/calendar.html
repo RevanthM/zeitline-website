@@ -2127,6 +2127,20 @@
                 </div>
             </div>
             
+            <!-- Connected Calendars Section -->
+            <div class="calendar-section" style="margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 style="font-family: 'Instrument Serif', Georgia, serif; font-size: 1.125rem; font-weight: 400; margin: 0;">Connected Calendars</h3>
+                    <button class="btn btn-ghost" onclick="clearCalendarCache()" style="font-size: 0.75rem; padding: 0.5rem 0.75rem;">
+                        Clear Cache
+                    </button>
+                </div>
+                <div id="calendarConnections">
+                    <!-- Calendar connections will be rendered here by JavaScript -->
+                    <div style="color: var(--text-muted); font-size: 0.875rem;">Loading calendars...</div>
+                </div>
+            </div>
+            
             <!-- Calendar Action Bar -->
             <div class="calendar-action-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding: 0.75rem 1rem; background: var(--bg-card); border: 1px solid var(--border-subtle); border-radius: 12px;">
                 <div style="display: flex; gap: 0.75rem;">
@@ -2511,7 +2525,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="/js/firebase-config.js?v=2.1"></script>
-    <script src="/js/calendar.js?v=10.0"></script>
+    <script src="/js/calendar.js?v=10.1"></script>
 </body>
 </html>
 
