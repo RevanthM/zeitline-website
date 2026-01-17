@@ -132,6 +132,269 @@
             overflow: hidden;
         }
         
+        /* Recording Delete Button */
+        .recording-delete-btn {
+            position: absolute;
+            top: 0.75rem;
+            right: 0.75rem;
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+        
+        .recording-card:hover .recording-delete-btn {
+            opacity: 1;
+        }
+        
+        .recording-delete-btn:hover {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+        
+        .recording-card {
+            position: relative;
+        }
+        
+        /* Delete Confirmation Modal */
+        .delete-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            backdrop-filter: blur(4px);
+            animation: fadeIn 0.2s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .delete-modal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 16px;
+            padding: 1.5rem;
+            max-width: 400px;
+            width: 90%;
+            text-align: center;
+            animation: slideUp 0.2s ease;
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        .delete-modal-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        .delete-modal-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        
+        .delete-modal-message {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+            line-height: 1.5;
+        }
+        
+        .delete-modal-actions {
+            display: flex;
+            gap: 0.75rem;
+            justify-content: center;
+        }
+        
+        .delete-modal-actions button {
+            padding: 0.75rem 1.5rem;
+            border-radius: 10px;
+            font-family: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .delete-modal-cancel {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-secondary);
+        }
+        
+        .delete-modal-cancel:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+        
+        .delete-modal-confirm {
+            background: #ef4444;
+            border: none;
+            color: white;
+        }
+        
+        .delete-modal-confirm:hover {
+            background: #dc2626;
+        }
+        
+        .delete-modal-confirm:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        /* Multi-Select Mode Styles */
+        .bulk-actions-bar {
+            display: none;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem 1rem;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 12px;
+            margin-bottom: 1rem;
+        }
+        
+        .bulk-actions-bar.visible {
+            display: flex;
+        }
+        
+        .bulk-select-toggle {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .bulk-select-toggle:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .bulk-select-toggle.active {
+            background: rgba(239, 68, 68, 0.15);
+            border-color: rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+        
+        .select-all-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .select-all-checkbox input {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: #ef4444;
+        }
+        
+        .selected-count {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        
+        .bulk-delete-btn {
+            margin-left: auto;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            border: none;
+            background: #ef4444;
+            color: white;
+            font-size: 0.85rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .bulk-delete-btn:hover {
+            background: #dc2626;
+        }
+        
+        .bulk-delete-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .cancel-selection-btn {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+            background: transparent;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .cancel-selection-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+        
+        /* Recording Card Selection Checkbox */
+        .recording-select-checkbox {
+            position: absolute;
+            top: 0.75rem;
+            left: 0.75rem;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            accent-color: #ef4444;
+            z-index: 10;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        .selection-mode .recording-select-checkbox {
+            opacity: 1;
+        }
+        
+        .selection-mode .recording-card {
+            padding-left: 2.5rem;
+        }
+        
+        .recording-card.selected {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.05);
+        }
+        
+        .selection-mode .recording-delete-btn {
+            display: none;
+        }
+        
         .has-transcript-badge {
             background: rgba(87, 255, 212, 0.15);
             color: var(--accent-secondary);
@@ -978,6 +1241,32 @@
                     </svg>
                     <input type="text" class="search-input" placeholder="Search recordings or transcripts..." id="searchInput">
                 </div>
+                
+                <button class="bulk-select-toggle" id="selectModeBtn" onclick="recordingsManager.toggleSelectMode()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="9 11 12 14 22 4"/>
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                    </svg>
+                    Select
+                </button>
+            </div>
+            
+            <!-- Bulk Actions Bar -->
+            <div class="bulk-actions-bar" id="bulkActionsBar">
+                <label class="select-all-checkbox">
+                    <input type="checkbox" id="selectAllCheckbox" onchange="recordingsManager.toggleSelectAll()">
+                    <span>Select All</span>
+                </label>
+                <span class="selected-count" id="selectedCount">0 selected</span>
+                <button class="cancel-selection-btn" onclick="recordingsManager.toggleSelectMode()">
+                    Cancel
+                </button>
+                <button class="bulk-delete-btn" id="bulkDeleteBtn" onclick="recordingsManager.showBulkDeleteConfirmation()" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    Delete Selected
+                </button>
             </div>
             
             <!-- Recordings Container -->
@@ -1131,7 +1420,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
     <script src="/js/firebase-config.js"></script>
-    <script src="/js/recordings.js?v=6"></script>
+    <script src="/js/recordings.js?v=7"></script>
 </body>
 </html>
 

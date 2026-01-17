@@ -177,6 +177,27 @@
             border-color: #22c55e;
         }
         
+        .delete-discussion-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.25rem;
+            display: flex;
+            align-items: center;
+            opacity: 0.7;
+            transition: opacity 0.2s, color 0.2s;
+        }
+        
+        .delete-discussion-btn:hover {
+            opacity: 1;
+            color: #ef4444;
+        }
+        
+        .discussion-card:hover .delete-discussion-btn {
+            opacity: 0.7;
+        }
+        
         /* Task Card */
         .task-card {
             background: var(--bg-elevated);
@@ -316,6 +337,31 @@
             color: #22c55e;
         }
         
+        /* Make entire tasks content area droppable */
+        .tasks-panel .panel-content {
+            position: relative;
+            min-height: 200px;
+        }
+        
+        .tasks-panel .panel-content.drag-over {
+            background: rgba(34, 197, 94, 0.03);
+        }
+        
+        .tasks-panel .panel-content.drag-over::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border: 2px dashed #22c55e;
+            border-radius: 12px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .tasks-panel.drag-over {
+            border-color: #22c55e;
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.2);
+        }
+        
         /* Empty States */
         .empty-state {
             text-align: center;
@@ -365,6 +411,14 @@
             color: var(--accent-primary);
         }
         
+        /* Auto-add checkbox styling */
+        #autoAddToCalendarCheckbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+            accent-color: var(--accent-primary);
+        }
+        
         /* Toast */
         .toast {
             position: fixed;
@@ -385,6 +439,88 @@
         @keyframes slideIn {
             from { transform: translateY(20px); opacity: 0; }
             to { transform: translateY(0); opacity: 1; }
+        }
+        
+        /* Bulk Selection Styles */
+        .bulk-actions {
+            display: none;
+            padding: 0.5rem 1rem;
+            background: rgba(239, 68, 68, 0.05);
+            border-bottom: 1px solid var(--border-subtle);
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .bulk-actions.visible {
+            display: flex !important;
+        }
+        
+        .bulk-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--accent-primary);
+        }
+        
+        .delete-selected-btn {
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .delete-selected-btn:hover {
+            background: rgba(239, 68, 68, 0.2);
+            border-color: #ef4444;
+        }
+        
+        .delete-selected-btn.visible {
+            display: inline-block !important;
+        }
+        
+        /* Card Selection Checkbox */
+        .card-select-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--accent-primary);
+            flex-shrink: 0;
+        }
+        
+        .discussion-card.selected,
+        .task-card.selected {
+            border-color: #ef4444;
+            background: rgba(239, 68, 68, 0.05);
+        }
+        
+        /* Add Item Button */
+        .add-item-btn {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            border: 1px solid rgba(201, 255, 87, 0.3);
+            background: rgba(201, 255, 87, 0.1);
+            color: var(--accent-primary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .add-item-btn:hover {
+            background: rgba(201, 255, 87, 0.2);
+            border-color: var(--accent-primary);
+        }
+        
+        .add-item-btn svg {
+            stroke: var(--accent-primary);
         }
     </style>
 </head>
@@ -505,7 +641,16 @@
                 <div class="panel discussion-panel">
                     <div class="panel-header">
                         <h2>💬 Discussion Points</h2>
-                        <span class="panel-count" id="discussionCount">0</span>
+                        <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: auto;">
+                            <button id="addDiscussionBtn" class="add-item-btn" title="Add discussion point manually">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="12" y1="5" x2="12" y2="19"/>
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                                Add
+                            </button>
+                            <span class="panel-count" id="discussionCount">0</span>
+                        </div>
                     </div>
                     <div class="panel-filters">
                         <button class="filter-chip active" data-filter="all">All</button>
@@ -513,6 +658,17 @@
                         <button class="filter-chip" data-filter="deadline">Deadlines</button>
                         <button class="filter-chip" data-filter="decision">Decisions</button>
                         <button class="filter-chip" data-filter="question">Questions</button>
+                    </div>
+                    <!-- Bulk Selection Controls -->
+                    <div class="bulk-actions" id="discussionBulkActions" style="display: none; padding: 0.5rem 1rem; background: rgba(239, 68, 68, 0.1); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 1rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem; color: var(--text-secondary);">
+                            <input type="checkbox" id="selectAllDiscussions" class="bulk-checkbox">
+                            <span>Select All</span>
+                        </label>
+                        <span id="discussionSelectedCount" style="font-size: 0.8rem; color: var(--text-muted);">0 selected</span>
+                        <button id="deleteSelectedDiscussions" class="delete-selected-btn" style="margin-left: auto; display: none;">
+                            🗑️ Delete Selected
+                        </button>
                     </div>
                     <div class="panel-content" id="discussionContent">
                         <div class="empty-state" id="discussionEmpty">
@@ -527,13 +683,39 @@
                 <!-- Right Panel: Task List -->
                 <div class="panel tasks-panel">
                     <div class="panel-header">
-                        <h2>✅ My Tasks</h2>
-                        <span class="panel-count" id="taskCount">0</span>
+                        <div style="display: flex; align-items: center; gap: 1rem; flex: 1;">
+                            <h2>✅ My Tasks</h2>
+                            <label style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; color: var(--text-secondary); cursor: pointer; user-select: none;">
+                                <input type="checkbox" id="autoAddToCalendarCheckbox" style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent-primary);">
+                                <span>Auto-add to calendar</span>
+                            </label>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <button id="addTaskBtn" class="add-item-btn" title="Add task manually">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="12" y1="5" x2="12" y2="19"/>
+                                    <line x1="5" y1="12" x2="19" y2="12"/>
+                                </svg>
+                                Add
+                            </button>
+                            <span class="panel-count" id="taskCount">0</span>
+                        </div>
                     </div>
                     <div class="panel-filters">
                         <button class="filter-chip active" data-filter="pending">Pending</button>
                         <button class="filter-chip" data-filter="completed">Completed</button>
                         <button class="filter-chip" data-filter="all">All</button>
+                    </div>
+                    <!-- Bulk Selection Controls -->
+                    <div class="bulk-actions" id="taskBulkActions" style="display: none; padding: 0.5rem 1rem; background: rgba(239, 68, 68, 0.1); border-bottom: 1px solid var(--border-subtle); display: flex; align-items: center; gap: 1rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.85rem; color: var(--text-secondary);">
+                            <input type="checkbox" id="selectAllTasks" class="bulk-checkbox">
+                            <span>Select All</span>
+                        </label>
+                        <span id="taskSelectedCount" style="font-size: 0.8rem; color: var(--text-muted);">0 selected</span>
+                        <button id="deleteSelectedTasks" class="delete-selected-btn" style="margin-left: auto; display: none;">
+                            🗑️ Delete Selected
+                        </button>
                     </div>
                     <div class="panel-content" id="tasksContent">
                         <div class="drop-zone" id="dropZone">
@@ -641,12 +823,147 @@
             to { transform: rotate(360deg); }
         }
     </style>
+    
+    <!-- Add Discussion Point Modal -->
+    <div id="addDiscussionModal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.8); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+        <div class="modal-content" style="max-width: 500px; width: 95%; background: var(--bg-elevated, #1a1a2e); border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0;">💬 Add Discussion Point</h3>
+                <button id="closeDiscussionModalBtn" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            
+            <form id="addDiscussionForm" style="display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Content *</label>
+                    <textarea id="discussionContent" rows="3" required placeholder="Enter your discussion point or note..."
+                              style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit; resize: vertical;"></textarea>
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Type</label>
+                    <select id="discussionType" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                        <option value="other">Other</option>
+                        <option value="meeting">Meeting</option>
+                        <option value="deadline">Deadline</option>
+                        <option value="decision">Decision</option>
+                        <option value="question">Question</option>
+                        <option value="reminder">Reminder</option>
+                        <option value="user_task">Task</option>
+                        <option value="follow_up">Follow Up</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Speaker (optional)</label>
+                    <input type="text" id="discussionSpeaker" placeholder="Who said this?"
+                           style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Date/Time Mentioned (optional)</label>
+                    <input type="datetime-local" id="discussionDateTime"
+                           style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Location (optional)</label>
+                    <input type="text" id="discussionLocation" placeholder="e.g., Office, Zoom"
+                           style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                </div>
+                
+                <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                    <button type="button" id="cancelDiscussionBtn" 
+                            style="flex: 1; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: transparent; color: var(--text-secondary); font-family: inherit; cursor: pointer;">
+                        Cancel
+                    </button>
+                    <button type="submit" id="saveDiscussionBtn"
+                            style="flex: 1; padding: 0.75rem; border-radius: 8px; border: none; background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); color: var(--bg-deep); font-family: inherit; font-weight: 600; cursor: pointer;">
+                        Add Discussion Point
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Add Task Modal -->
+    <div id="addTaskModal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100vh; background: rgba(0, 0, 0, 0.8); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+        <div class="modal-content" style="max-width: 500px; width: 95%; background: var(--bg-elevated, #1a1a2e); border-radius: 16px; padding: 1.5rem; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3 style="margin: 0;">✅ Add Task</h3>
+                <button id="closeTaskModalBtn" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer;">&times;</button>
+            </div>
+            
+            <form id="addTaskForm" style="display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Task Title *</label>
+                    <input type="text" id="taskTitle" required placeholder="What needs to be done?"
+                           style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Details (optional)</label>
+                    <textarea id="taskDetails" rows="2" placeholder="Additional notes or context..."
+                              style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit; resize: vertical;"></textarea>
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Category</label>
+                    <select id="taskCategory" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                        <option value="other">📋 Other</option>
+                        <option value="meeting">👥 Meeting</option>
+                        <option value="call">📞 Call</option>
+                        <option value="deadline">⏰ Deadline</option>
+                        <option value="reminder">🔔 Reminder</option>
+                        <option value="work">💼 Work</option>
+                        <option value="personal">👤 Personal</option>
+                        <option value="errand">🛒 Errand</option>
+                        <option value="health">❤️ Health</option>
+                        <option value="travel">✈️ Travel</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Due Date (optional)</label>
+                    <input type="datetime-local" id="taskDueDate"
+                           style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Location (optional)</label>
+                    <input type="text" id="taskLocation" placeholder="e.g., Office, Home"
+                           style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                </div>
+                
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.5rem;">Priority</label>
+                    <select id="taskPriority" style="width: 100%; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-elevated); color: var(--text-primary); font-family: inherit;">
+                        <option value="">No priority</option>
+                        <option value="1">⚡ P1 - Urgent</option>
+                        <option value="2">🔶 P2 - High</option>
+                        <option value="3">🔷 P3 - Medium</option>
+                        <option value="4">⬜ P4 - Low</option>
+                    </select>
+                </div>
+                
+                <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                    <button type="button" id="cancelTaskBtn" 
+                            style="flex: 1; padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-subtle); background: transparent; color: var(--text-secondary); font-family: inherit; cursor: pointer;">
+                        Cancel
+                    </button>
+                    <button type="submit" id="saveTaskBtn"
+                            style="flex: 1; padding: 0.75rem; border-radius: 8px; border: none; background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)); color: var(--bg-deep); font-family: inherit; font-weight: 600; cursor: pointer;">
+                        Add Task
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/js/firebase-config.js"></script>
-    <script src="/js/events.js?v=3"></script>
+    <script src="/js/firebase-config.js?v=2.3"></script>
+    <script src="/js/events.js?v=7"></script>
 </body>
 </html>

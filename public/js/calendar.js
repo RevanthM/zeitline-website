@@ -1531,7 +1531,21 @@ function createDayCell(date, dateStr, isOtherMonth) {
 
 function selectDate(dateStr) {
     selectedDate = dateStr;
-    if (currentView === 'day') {
+    
+    // If in month view, switch to day view for a detailed look at that day
+    if (currentView === 'month') {
+        currentView = 'day';
+        
+        // Update view toggle buttons to show Day as active
+        document.querySelectorAll('.view-toggle button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+        const dayBtn = document.querySelector('.view-toggle button[onclick*="day"]');
+        if (dayBtn) dayBtn.classList.add('active');
+        
+        // Reload events for the day view date range and render
+        loadCalendarEvents();
+    } else if (currentView === 'day') {
         renderDayView();
     } else if (currentView === 'week') {
         renderWeekView();
@@ -2150,8 +2164,36 @@ async function openEventModal(eventId, e) {
     if (e) e.stopPropagation();
     
     try {
-        const response = await apiCall(`/calendars/events/${eventId}`);
-        const event = response.data;
+        // First, try to find the event in already-loaded calendarEvents
+        let event = null;
+        
+        // Search through all dates in calendarEvents
+        for (const dateStr in calendarEvents) {
+            const eventsForDate = calendarEvents[dateStr];
+            const foundEvent = eventsForDate.find(ev => ev.id === eventId);
+            if (foundEvent) {
+                event = foundEvent;
+                console.log(`Found event ${eventId} in loaded calendarEvents for date ${dateStr}`);
+                break;
+            }
+        }
+        
+        // If not found in loaded events, try API call as fallback
+        if (!event) {
+            console.log(`Event ${eventId} not found in loaded events, trying API...`);
+            try {
+                const response = await apiCall(`/calendars/events/${eventId}`);
+                event = response.data;
+            } catch (apiError) {
+                console.warn('API call failed, event not available:', apiError);
+            }
+        }
+        
+        if (!event) {
+            showError('Event not found');
+            return;
+        }
+        
         currentEventData = event;
         
         // Update header
@@ -2167,6 +2209,12 @@ async function openEventModal(eventId, e) {
                 <span>${calendarName}</span>
             </div>
         `;
+        
+        // Update time display section
+        const timeDisplayEl = document.getElementById('eventTimeDisplay');
+        if (timeDisplayEl) {
+            timeDisplayEl.textContent = formatEventTime(event);
+        }
         
         // Update description
         const descriptionSection = document.getElementById('eventDescriptionSection');
@@ -2244,21 +2292,238 @@ function formatEventTime(event) {
 }
 
 function editEvent() {
-    // TODO: Implement event editing
-    showError('Event editing coming soon');
-}
-
-function deleteEvent() {
     if (!currentEventData) {
         showError('No event selected');
         return;
     }
     
+    // Check if this is a Zeitline event (editable)
+    if (currentEventData.calendarType !== 'zeitline') {
+        showError(`Cannot edit events from ${currentEventData.calendarType || 'external'} calendar. Please edit in the original calendar app.`);
+        return;
+    }
+    
+    // Open edit modal
+    openEditEventModal(currentEventData);
+}
+
+function openEditEventModal(event) {
+    // Check if edit modal exists, if not create it
+    let editModal = document.getElementById('editEventModal');
+    if (!editModal) {
+        editModal = createEditEventModal();
+        document.body.appendChild(editModal);
+    }
+    
+    // Populate the form with current event data
+    const startDate = new Date(event.start);
+    const endDate = new Date(event.end);
+    
+    document.getElementById('editEventTitle').value = event.title || '';
+    document.getElementById('editEventDate').value = formatDateForInput(startDate);
+    document.getElementById('editEventStartTime').value = formatTimeForInput(startDate);
+    document.getElementById('editEventEndTime').value = formatTimeForInput(endDate);
+    document.getElementById('editEventLocation').value = event.location || '';
+    document.getElementById('editEventDescription').value = event.description || '';
+    
+    // Store the event ID for saving
+    editModal.dataset.eventId = event.id;
+    
+    // Close the detail modal and open edit modal
+    document.getElementById('eventModal').classList.remove('active');
+    editModal.classList.add('active');
+}
+
+function createEditEventModal() {
+    const modal = document.createElement('div');
+    modal.className = 'event-detail-modal';
+    modal.id = 'editEventModal';
+    modal.onclick = function(e) { closeEditEventModal(e); };
+    
+    modal.innerHTML = `
+        <div class="event-detail-content" onclick="event.stopPropagation()" style="max-width: 500px;">
+            <div class="event-detail-header">
+                <button class="event-detail-close" onclick="closeEditEventModal()" aria-label="Close">×</button>
+                <h2 class="event-detail-title">✏️ Edit Event</h2>
+            </div>
+            
+            <div class="event-detail-body">
+                <form id="editEventForm" onsubmit="saveEditedEvent(event)">
+                    <div style="margin-bottom: 1rem;">
+                        <label for="editEventTitle" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Event Title *</label>
+                        <input type="text" id="editEventTitle" required placeholder="Enter event title" 
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label for="editEventDate" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Date *</label>
+                        <input type="date" id="editEventDate" required 
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label for="editEventStartTime" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Start Time *</label>
+                            <input type="time" id="editEventStartTime" required
+                                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                        </div>
+                        <div>
+                            <label for="editEventEndTime" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">End Time *</label>
+                            <input type="time" id="editEventEndTime" required
+                                style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                        </div>
+                    </div>
+                    
+                    <div style="margin-bottom: 1rem;">
+                        <label for="editEventLocation" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Location</label>
+                        <input type="text" id="editEventLocation" placeholder="Add location (optional)" 
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box;">
+                    </div>
+                    
+                    <div style="margin-bottom: 1.5rem;">
+                        <label for="editEventDescription" style="display: block; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Description</label>
+                        <textarea id="editEventDescription" placeholder="Add description (optional)" rows="3"
+                            style="width: 100%; padding: 0.75rem 1rem; background: var(--bg-deep); border: 1px solid var(--border-subtle); border-radius: 8px; color: var(--text-primary); font-size: 0.9375rem; box-sizing: border-box; resize: vertical;"></textarea>
+                    </div>
+                    
+                    <div style="display: flex; gap: 0.75rem;">
+                        <button type="button" onclick="closeEditEventModal()" class="btn btn-secondary" style="flex: 1; padding: 0.875rem;">
+                            Cancel
+                        </button>
+                        <button type="submit" id="editEventSaveBtn" class="btn btn-primary" style="flex: 1; padding: 0.875rem;">
+                            Save Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+    
+    return modal;
+}
+
+function closeEditEventModal(e) {
+    if (e && e.target !== e.currentTarget) return;
+    const modal = document.getElementById('editEventModal');
+    if (modal) {
+        modal.classList.remove('active');
+    }
+}
+
+function formatDateForInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatTimeForInput(date) {
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+}
+
+async function saveEditedEvent(e) {
+    e.preventDefault();
+    
+    const modal = document.getElementById('editEventModal');
+    const eventId = modal.dataset.eventId;
+    
+    if (!eventId) {
+        showError('No event to update');
+        return;
+    }
+    
+    const saveBtn = document.getElementById('editEventSaveBtn');
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = 'Saving...';
+    saveBtn.disabled = true;
+    
+    try {
+        const title = document.getElementById('editEventTitle').value.trim();
+        const date = document.getElementById('editEventDate').value;
+        const startTime = document.getElementById('editEventStartTime').value;
+        const endTime = document.getElementById('editEventEndTime').value;
+        const location = document.getElementById('editEventLocation').value.trim();
+        const description = document.getElementById('editEventDescription').value.trim();
+        
+        if (!title || !date || !startTime || !endTime) {
+            showError('Please fill in all required fields');
+            saveBtn.textContent = originalText;
+            saveBtn.disabled = false;
+            return;
+        }
+        
+        // Construct ISO date strings
+        const startISO = `${date}T${startTime}:00`;
+        const endISO = `${date}T${endTime}:00`;
+        
+        const updateData = {
+            title,
+            start: startISO,
+            end: endISO,
+            location: location || null,
+            description: description || ''
+        };
+        
+        console.log('Updating event:', eventId, updateData);
+        
+        const response = await apiCall(`/calendars/events/${eventId}`, {
+            method: 'PUT',
+            body: JSON.stringify(updateData)
+        });
+        
+        if (response.success || response.data) {
+            showSuccess('Event updated successfully!');
+            closeEditEventModal();
+            
+            // Reload calendar events to show the updated event
+            await loadCalendarEvents();
+        } else {
+            throw new Error(response.error || 'Failed to update event');
+        }
+    } catch (error) {
+        console.error('Error updating event:', error);
+        showError(error.message || 'Failed to update event');
+    } finally {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
+    }
+}
+
+async function deleteEvent() {
+    if (!currentEventData) {
+        showError('No event selected');
+        return;
+    }
+    
+    // Check if this is a Zeitline event (deletable)
+    if (currentEventData.calendarType !== 'zeitline') {
+        showError(`Cannot delete events from ${currentEventData.calendarType || 'external'} calendar. Please delete in the original calendar app.`);
+        return;
+    }
+    
     if (confirm(`Are you sure you want to delete "${currentEventData.title}"?`)) {
-        // TODO: Implement event deletion via API
-    showError('Event deletion coming soon');
-        // For now, just close the modal
-        // closeEventModal();
+        try {
+            console.log('Deleting event:', currentEventData.id);
+            
+            const response = await apiCall(`/calendars/events/${currentEventData.id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.success || response.data) {
+                showSuccess('Event deleted successfully!');
+                closeEventModal();
+                
+                // Reload calendar events to reflect the deletion
+                await loadCalendarEvents();
+            } else {
+                throw new Error(response.error || 'Failed to delete event');
+            }
+        } catch (error) {
+            console.error('Error deleting event:', error);
+            showError(error.message || 'Failed to delete event');
+        }
     }
 }
 

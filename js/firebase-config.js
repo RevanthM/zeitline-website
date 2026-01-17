@@ -15,19 +15,14 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 
-// Set persistence to SESSION - keeps user logged in during browser session only
-// This allows users to switch accounts more easily
-auth.setPersistence(firebase.auth.Auth.Persistence.SESSION)
+// Set persistence to LOCAL - keeps user logged in across browser sessions and tabs
+// User stays signed in until they explicitly log out
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
   .then(() => {
-    console.log("Auth persistence set to SESSION");
+    console.log("Auth persistence set to LOCAL");
   })
   .catch((error) => {
     console.error("Error setting persistence:", error);
-    // Fallback to LOCAL if SESSION is not available
-    auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL)
-      .then(() => {
-        console.log("Auth persistence set to LOCAL (fallback)");
-      });
   });
 
 // API base URL - change for production
@@ -38,18 +33,59 @@ const API_BASE_URL =
 
 // Auth state observer
 let currentUser = null;
+let authInitialized = false; // Track if auth has been checked to prevent false "signed out" on page load
 
-auth.onAuthStateChanged((user) => {
+auth.onAuthStateChanged(async (user) => {
+  const wasInitialized = authInitialized;
+  authInitialized = true;
   currentUser = user;
+  
   if (user) {
     console.log("User signed in:", user.email);
     // Store token for API calls
-    user.getIdToken().then((token) => {
-      localStorage.setItem("authToken", token);
-    });
+    const token = await user.getIdToken();
+    localStorage.setItem("authToken", token);
+    
+    // Fetch profile from API to sync onboarding status
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/profile`, {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data) {
+          const profile = data.data;
+          
+          // Save profile to localStorage
+          localStorage.setItem("zeitline_profile", JSON.stringify(profile));
+          
+          // Sync onboarding status
+          if (profile.onboardingComplete || 
+              (profile.personal && profile.personal.fullName && profile.personal.age)) {
+            localStorage.setItem("zeitline_onboarding_complete", "true");
+          }
+          
+          console.log("Profile synced from server, onboarding complete:", 
+            profile.onboardingComplete || false);
+        }
+      }
+    } catch (e) {
+      console.log("Could not fetch profile from API:", e.message);
+    }
   } else {
-    console.log("User signed out");
-    localStorage.removeItem("authToken");
+    // Only log "signed out" if auth was already initialized (actual sign out, not initial check)
+    if (wasInitialized) {
+      console.log("User signed out");
+      localStorage.removeItem("authToken");
+    } else {
+      // First check returned null - user might not be signed in, or Firebase is still loading
+      console.log("Auth initialized - no user session found");
+      // Don't remove token immediately - let the next check confirm
+    }
   }
 
   // Dispatch custom event for page-specific handling
@@ -58,7 +94,20 @@ auth.onAuthStateChanged((user) => {
 
 // Helper function for API calls
 async function apiCall(endpoint, options = {}) {
-  const token = localStorage.getItem("authToken");
+  // Try to get a fresh token from Firebase first, fall back to localStorage
+  let token = null;
+  const user = firebase.auth().currentUser;
+  if (user) {
+    try {
+      token = await user.getIdToken(true); // Force refresh
+      localStorage.setItem("authToken", token); // Update stored token
+    } catch (tokenError) {
+      console.warn("Could not refresh token, using stored token:", tokenError);
+      token = localStorage.getItem("authToken");
+    }
+  } else {
+    token = localStorage.getItem("authToken");
+  }
 
   const headers = {
     "Content-Type": "application/json",
@@ -71,7 +120,14 @@ async function apiCall(endpoint, options = {}) {
     headers,
   });
 
-  const data = await response.json();
+  // Handle non-JSON responses gracefully
+  let data;
+  try {
+    data = await response.json();
+  } catch (parseError) {
+    console.error("Failed to parse API response:", parseError);
+    throw new Error("Failed to fetch - server returned invalid response");
+  }
 
   if (!response.ok) {
     throw new Error(data.error || "API request failed");

@@ -10,12 +10,18 @@ class EventsManager {
         this.draggedItem = null;
         this.unsubscribeSessions = null;
         this.unsubscribeTasks = null;
+        this.autoAddToCalendar = false; // User preference for auto-adding to calendar
+        
+        // Selection state for bulk operations
+        this.selectedDiscussionPoints = new Set();
+        this.selectedTasks = new Set();
         
         this.init();
     }
     
     async init() {
         await this.waitForAuth();
+        await this.loadUserSettings();
         this.setupEventListeners();
         this.setupRealtimeListeners();
     }
@@ -31,7 +37,58 @@ class EventsManager {
         });
     }
     
+    async loadUserSettings() {
+        const userId = firebase.auth().currentUser?.uid;
+        if (!userId) return;
+        
+        const db = firebase.firestore();
+        
+        try {
+            const userDoc = await db.collection('users').doc(userId).get();
+            if (userDoc.exists) {
+                const userData = userDoc.data();
+                // Load preference from user settings, default to false
+                this.autoAddToCalendar = userData.autoAddTasksToCalendar || false;
+                
+                // Update checkbox UI
+                const checkbox = document.getElementById('autoAddToCalendarCheckbox');
+                if (checkbox) {
+                    checkbox.checked = this.autoAddToCalendar;
+                }
+            }
+        } catch (error) {
+            console.error('Error loading user settings:', error);
+        }
+    }
+    
+    async saveAutoAddPreference(enabled) {
+        const userId = firebase.auth().currentUser?.uid;
+        if (!userId) return;
+        
+        const db = firebase.firestore();
+        
+        try {
+            await db.collection('users').doc(userId).set({
+                autoAddTasksToCalendar: enabled
+            }, { merge: true });
+            
+            this.autoAddToCalendar = enabled;
+            this.showToast(enabled ? '✅ Auto-add to calendar enabled' : 'Auto-add to calendar disabled');
+        } catch (error) {
+            console.error('Error saving preference:', error);
+            this.showToast('Failed to save preference');
+        }
+    }
+    
     setupEventListeners() {
+        // Auto-add to calendar checkbox
+        const checkbox = document.getElementById('autoAddToCalendarCheckbox');
+        if (checkbox) {
+            checkbox.addEventListener('change', (e) => {
+                this.saveAutoAddPreference(e.target.checked);
+            });
+        }
+        
         // Discussion filter chips
         document.querySelectorAll('.discussion-panel .filter-chip').forEach(chip => {
             chip.addEventListener('click', (e) => {
@@ -72,6 +129,56 @@ class EventsManager {
                 this.addPointToTasks(pointId);
             });
         }
+        
+        // Bulk selection handlers - Discussion Points
+        const selectAllDiscussions = document.getElementById('selectAllDiscussions');
+        if (selectAllDiscussions) {
+            selectAllDiscussions.addEventListener('change', (e) => {
+                this.toggleSelectAllDiscussions(e.target.checked);
+            });
+        }
+        
+        const deleteSelectedDiscussions = document.getElementById('deleteSelectedDiscussions');
+        if (deleteSelectedDiscussions) {
+            deleteSelectedDiscussions.addEventListener('click', () => {
+                this.deleteSelectedDiscussionPoints();
+            });
+        }
+        
+        // Bulk selection handlers - Tasks
+        const selectAllTasks = document.getElementById('selectAllTasks');
+        if (selectAllTasks) {
+            selectAllTasks.addEventListener('change', (e) => {
+                this.toggleSelectAllTasks(e.target.checked);
+            });
+        }
+        
+        const deleteSelectedTasks = document.getElementById('deleteSelectedTasks');
+        if (deleteSelectedTasks) {
+            deleteSelectedTasks.addEventListener('click', () => {
+                this.deleteSelectedTasks();
+            });
+        }
+        
+        // Add Discussion Point button
+        const addDiscussionBtn = document.getElementById('addDiscussionBtn');
+        if (addDiscussionBtn) {
+            addDiscussionBtn.addEventListener('click', () => {
+                this.showAddDiscussionModal();
+            });
+        }
+        
+        // Add Task button
+        const addTaskBtn = document.getElementById('addTaskBtn');
+        if (addTaskBtn) {
+            addTaskBtn.addEventListener('click', () => {
+                this.showAddTaskModal();
+            });
+        }
+        
+        // Setup modal handlers
+        this.setupAddDiscussionModal();
+        this.setupAddTaskModal();
     }
     
     /**
@@ -221,22 +328,56 @@ class EventsManager {
                 this.addPointToTasks(pointId);
             });
         });
+        
+        // Add delete button click handlers
+        container.querySelectorAll('.delete-discussion-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const pointId = e.target.closest('.discussion-card').dataset.id;
+                if (confirm('Are you sure you want to delete this discussion point?')) {
+                    this.deleteDiscussionPoint(pointId);
+                }
+            });
+        });
+        
+        // Add checkbox selection handlers
+        container.querySelectorAll('.discussion-select').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                e.stopPropagation();
+                const pointId = e.target.dataset.id;
+                this.toggleDiscussionSelection(pointId, e.target.checked);
+            });
+        });
+        
+        // Show/hide bulk actions bar
+        this.updateDiscussionBulkActions(filtered.length);
     }
     
     createDiscussionCard(point) {
         const typeClass = (point.type || 'other').replace(/_/g, '-');
         const isAdded = point.addedToTaskList;
+        const isSelected = this.selectedDiscussionPoints.has(point.id);
         
         return `
-            <div class="discussion-card ${isAdded ? 'added' : ''}" 
+            <div class="discussion-card ${isAdded ? 'added' : ''} ${isSelected ? 'selected' : ''}" 
                  data-id="${point.id}" 
                  draggable="${!isAdded}">
                 <div class="discussion-header">
+                    <input type="checkbox" class="card-select-checkbox discussion-select" 
+                           data-id="${point.id}" ${isSelected ? 'checked' : ''} 
+                           title="Select for bulk delete">
                     <span class="discussion-type ${typeClass}">
                         ${(point.type || 'other').replace(/_/g, ' ')}
                     </span>
                     ${point.speaker ? `<span class="discussion-speaker">${point.speaker}</span>` : ''}
-                    ${!isAdded ? `<button class="add-to-tasks-btn">+ Add to Tasks</button>` : '<span style="color: #22c55e; font-size: 0.75rem;">✓ Added</span>'}
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-left: auto;">
+                        ${!isAdded ? `<button class="add-to-tasks-btn">+ Add to Tasks</button>` : '<span style="color: #22c55e; font-size: 0.75rem;">✓ Added</span>'}
+                        <button class="delete-discussion-btn" title="Delete discussion point" style="background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 0.25rem; display: flex; align-items: center; opacity: 0.8; transition: opacity 0.2s;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="discussion-content">${point.content}</div>
                 <div class="discussion-meta">
@@ -296,10 +437,23 @@ class EventsManager {
                 this.deleteTask(taskId);
             });
         });
+        
+        // Add checkbox selection handlers
+        container.querySelectorAll('.task-select').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                e.stopPropagation();
+                const taskId = e.target.dataset.id;
+                this.toggleTaskSelection(taskId, e.target.checked);
+            });
+        });
+        
+        // Show/hide bulk actions bar
+        this.updateTaskBulkActions(filtered.length);
     }
     
     createTaskCard(task) {
         const isCompleted = task.status === 'completed';
+        const isSelected = this.selectedTasks.has(task.id);
         const categoryIcons = {
             meeting: '👥', call: '📞', deadline: '⏰', reminder: '🔔',
             errand: '🛒', work: '💼', personal: '👤', health: '❤️',
@@ -308,8 +462,11 @@ class EventsManager {
         const icon = categoryIcons[task.category] || '📋';
         
         return `
-            <div class="task-card ${isCompleted ? 'completed' : ''}" data-id="${task.id}">
+            <div class="task-card ${isCompleted ? 'completed' : ''} ${isSelected ? 'selected' : ''}" data-id="${task.id}">
                 <div class="task-header">
+                    <input type="checkbox" class="card-select-checkbox task-select" 
+                           data-id="${task.id}" ${isSelected ? 'checked' : ''} 
+                           title="Select for bulk delete">
                     <button class="task-checkbox ${isCompleted ? 'checked' : ''}">
                         ${isCompleted ? '✓' : ''}
                     </button>
@@ -393,6 +550,16 @@ class EventsManager {
                 }
             }
             
+            // Auto-add to calendar if preference is enabled and task has a suggested date
+            if (this.autoAddToCalendar && newTask.suggestedDate) {
+                try {
+                    await this.autoAddTaskToCalendar(newTask);
+                } catch (calendarError) {
+                    console.error('Error auto-adding task to calendar:', calendarError);
+                    // Don't show error toast, just log it
+                }
+            }
+            
             this.showToast('Task added successfully!');
         } catch (error) {
             console.error('Error adding task:', error);
@@ -401,6 +568,58 @@ class EventsManager {
         // Re-render
         this.renderDiscussionPoints();
         this.renderTasks();
+    }
+    
+    async autoAddTaskToCalendar(task) {
+        const user = firebase.auth().currentUser;
+        if (!user) return;
+        
+        const timezoneOffset = new Date().getTimezoneOffset();
+        const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        
+        try {
+            // Get AI time suggestion using apiCall helper
+            const suggestResult = await apiCall('/calendars/suggest-time', {
+                method: 'POST',
+                body: JSON.stringify({
+                    taskTitle: task.title,
+                    taskDetails: task.details,
+                    taskDuration: 60,
+                    preferredDate: task.suggestedDate,
+                    timezoneOffset: timezoneOffset,
+                    timezone: timezone
+                })
+            });
+            
+            const suggestion = suggestResult.data;
+            if (!suggestion) return;
+            
+            const startDateTime = `${suggestion.startDate}T${suggestion.startTime}:00`;
+            const endDateTime = `${suggestion.endDate}T${suggestion.endTime}:00`;
+            
+            const eventData = {
+                title: task.title,
+                description: task.details || '',
+                start: startDateTime,
+                end: endDateTime,
+                location: task.location || '',
+                taskId: task.id
+            };
+            
+            // Create the calendar event using apiCall helper
+            const createResult = await apiCall('/calendars/events', {
+                method: 'POST',
+                body: JSON.stringify(eventData)
+            });
+            
+            if (createResult.success || createResult.data) {
+                // Update local task
+                task.addedToCalendar = true;
+                await this.saveTasks();
+            }
+        } catch (error) {
+            console.error('Error auto-adding task to calendar:', error);
+        }
     }
     
     async toggleTaskComplete(taskId) {
@@ -419,6 +638,634 @@ class EventsManager {
         await this.saveTasks();
         this.renderTasks();
     }
+    
+    /**
+     * Delete a discussion point from Firestore
+     * @param {string} pointId - The ID of the discussion point to delete
+     */
+    async deleteDiscussionPoint(pointId) {
+        const point = this.discussionPoints.find(p => p.id === pointId);
+        if (!point) {
+            this.showToast('Discussion point not found');
+            return;
+        }
+        
+        if (!point.sessionId) {
+            this.showToast('Cannot delete: missing session information');
+            return;
+        }
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                this.showToast('Please sign in first');
+                return;
+            }
+            
+            const db = firebase.firestore();
+            const userId = user.uid;
+            const sessionRef = db.collection('users').doc(userId)
+                .collection('conversationSessions').doc(point.sessionId);
+            
+            // Fetch current session data
+            const sessionDoc = await sessionRef.get();
+            if (!sessionDoc.exists) {
+                this.showToast('Discussion points not found');
+                return;
+            }
+            
+            const sessionData = sessionDoc.data();
+            const points = sessionData.points || [];
+            
+            // Find and remove the point
+            const pointIndex = points.findIndex(p => p.id === pointId);
+            if (pointIndex === -1) {
+                this.showToast('Point not found in session');
+                return;
+            }
+            
+            // Remove the point
+            points.splice(pointIndex, 1);
+            
+            // Update Firestore
+            await sessionRef.update({
+                points: points,
+                updatedAt: firebase.firestore.Timestamp.now()
+            });
+            
+            // Also update the recording's extractedPointCount if recordingId exists
+            if (point.recordingId) {
+                const recordingRef = db.collection('users').doc(userId)
+                    .collection('recordings').doc(point.recordingId);
+                
+                try {
+                    await recordingRef.update({
+                        extractedPointCount: points.length
+                    });
+                } catch (recordingError) {
+                    console.warn('Could not update recording point count:', recordingError);
+                    // Continue even if this fails
+                }
+            }
+            
+            // Remove from local state (real-time listener will also update, but this is faster)
+            this.discussionPoints = this.discussionPoints.filter(p => p.id !== pointId);
+            
+            // Re-render
+            this.renderDiscussionPoints();
+            
+            this.showToast('🗑️ Discussion point deleted');
+            
+        } catch (error) {
+            console.error('Error deleting discussion point:', error);
+            this.showToast(`Failed to delete: ${error.message}`);
+        }
+    }
+    
+    // ==================== BULK SELECTION METHODS ====================
+    
+    /**
+     * Toggle selection of a single discussion point
+     */
+    toggleDiscussionSelection(pointId, isSelected) {
+        if (isSelected) {
+            this.selectedDiscussionPoints.add(pointId);
+        } else {
+            this.selectedDiscussionPoints.delete(pointId);
+        }
+        
+        // Update the card's selected class
+        const card = document.querySelector(`.discussion-card[data-id="${pointId}"]`);
+        if (card) {
+            card.classList.toggle('selected', isSelected);
+        }
+        
+        this.updateDiscussionBulkActions();
+    }
+    
+    /**
+     * Toggle selection of a single task
+     */
+    toggleTaskSelection(taskId, isSelected) {
+        if (isSelected) {
+            this.selectedTasks.add(taskId);
+        } else {
+            this.selectedTasks.delete(taskId);
+        }
+        
+        // Update the card's selected class
+        const card = document.querySelector(`.task-card[data-id="${taskId}"]`);
+        if (card) {
+            card.classList.toggle('selected', isSelected);
+        }
+        
+        this.updateTaskBulkActions();
+    }
+    
+    /**
+     * Toggle select all discussion points
+     */
+    toggleSelectAllDiscussions(selectAll) {
+        const checkboxes = document.querySelectorAll('.discussion-select');
+        
+        if (selectAll) {
+            checkboxes.forEach(cb => {
+                cb.checked = true;
+                this.selectedDiscussionPoints.add(cb.dataset.id);
+                cb.closest('.discussion-card').classList.add('selected');
+            });
+        } else {
+            checkboxes.forEach(cb => {
+                cb.checked = false;
+                cb.closest('.discussion-card').classList.remove('selected');
+            });
+            this.selectedDiscussionPoints.clear();
+        }
+        
+        this.updateDiscussionBulkActions();
+    }
+    
+    /**
+     * Toggle select all tasks
+     */
+    toggleSelectAllTasks(selectAll) {
+        const checkboxes = document.querySelectorAll('.task-select');
+        
+        if (selectAll) {
+            checkboxes.forEach(cb => {
+                cb.checked = true;
+                this.selectedTasks.add(cb.dataset.id);
+                cb.closest('.task-card').classList.add('selected');
+            });
+        } else {
+            checkboxes.forEach(cb => {
+                cb.checked = false;
+                cb.closest('.task-card').classList.remove('selected');
+            });
+            this.selectedTasks.clear();
+        }
+        
+        this.updateTaskBulkActions();
+    }
+    
+    /**
+     * Update the discussion points bulk actions bar visibility and count
+     */
+    updateDiscussionBulkActions(totalCount = null) {
+        const bulkActions = document.getElementById('discussionBulkActions');
+        const selectedCount = document.getElementById('discussionSelectedCount');
+        const deleteBtn = document.getElementById('deleteSelectedDiscussions');
+        const selectAllCheckbox = document.getElementById('selectAllDiscussions');
+        
+        // Use provided count or count from current filtered list
+        const hasItems = totalCount !== null ? totalCount > 0 : this.discussionPoints.length > 0;
+        
+        if (bulkActions) {
+            bulkActions.classList.toggle('visible', hasItems);
+        }
+        
+        if (selectedCount) {
+            selectedCount.textContent = `${this.selectedDiscussionPoints.size} selected`;
+        }
+        
+        if (deleteBtn) {
+            deleteBtn.classList.toggle('visible', this.selectedDiscussionPoints.size > 0);
+        }
+        
+        // Update select all checkbox state
+        if (selectAllCheckbox) {
+            const checkboxes = document.querySelectorAll('.discussion-select');
+            const allSelected = checkboxes.length > 0 && 
+                                Array.from(checkboxes).every(cb => cb.checked);
+            selectAllCheckbox.checked = allSelected;
+        }
+    }
+    
+    /**
+     * Update the tasks bulk actions bar visibility and count
+     */
+    updateTaskBulkActions(totalCount = null) {
+        const bulkActions = document.getElementById('taskBulkActions');
+        const selectedCount = document.getElementById('taskSelectedCount');
+        const deleteBtn = document.getElementById('deleteSelectedTasks');
+        const selectAllCheckbox = document.getElementById('selectAllTasks');
+        
+        // Use provided count or count from current filtered list
+        const hasItems = totalCount !== null ? totalCount > 0 : this.tasks.length > 0;
+        
+        if (bulkActions) {
+            bulkActions.classList.toggle('visible', hasItems);
+        }
+        
+        if (selectedCount) {
+            selectedCount.textContent = `${this.selectedTasks.size} selected`;
+        }
+        
+        if (deleteBtn) {
+            deleteBtn.classList.toggle('visible', this.selectedTasks.size > 0);
+        }
+        
+        // Update select all checkbox state
+        if (selectAllCheckbox) {
+            const checkboxes = document.querySelectorAll('.task-select');
+            const allSelected = checkboxes.length > 0 && 
+                                Array.from(checkboxes).every(cb => cb.checked);
+            selectAllCheckbox.checked = allSelected;
+        }
+    }
+    
+    /**
+     * Delete all selected discussion points
+     */
+    async deleteSelectedDiscussionPoints() {
+        const count = this.selectedDiscussionPoints.size;
+        if (count === 0) return;
+        
+        if (!confirm(`Are you sure you want to delete ${count} discussion point${count > 1 ? 's' : ''}?`)) {
+            return;
+        }
+        
+        this.showToast(`Deleting ${count} discussion point${count > 1 ? 's' : ''}...`);
+        
+        let successCount = 0;
+        let failCount = 0;
+        
+        // Convert Set to array for iteration
+        const pointIds = Array.from(this.selectedDiscussionPoints);
+        
+        for (const pointId of pointIds) {
+            try {
+                await this.deleteDiscussionPointSilent(pointId);
+                successCount++;
+            } catch (error) {
+                console.error(`Failed to delete point ${pointId}:`, error);
+                failCount++;
+            }
+        }
+        
+        // Clear selections
+        this.selectedDiscussionPoints.clear();
+        
+        // Re-render
+        this.renderDiscussionPoints();
+        
+        if (failCount === 0) {
+            this.showToast(`🗑️ Deleted ${successCount} discussion point${successCount > 1 ? 's' : ''}`);
+        } else {
+            this.showToast(`Deleted ${successCount}, failed ${failCount}`);
+        }
+    }
+    
+    /**
+     * Delete a discussion point without showing toast (for bulk operations)
+     */
+    async deleteDiscussionPointSilent(pointId) {
+        const point = this.discussionPoints.find(p => p.id === pointId);
+        if (!point || !point.sessionId) return;
+        
+        const user = firebase.auth().currentUser;
+        if (!user) return;
+        
+        const db = firebase.firestore();
+        const userId = user.uid;
+        const sessionRef = db.collection('users').doc(userId)
+            .collection('conversationSessions').doc(point.sessionId);
+        
+        const sessionDoc = await sessionRef.get();
+        if (!sessionDoc.exists) return;
+        
+        const sessionData = sessionDoc.data();
+        const points = sessionData.points || [];
+        
+        const pointIndex = points.findIndex(p => p.id === pointId);
+        if (pointIndex === -1) return;
+        
+        points.splice(pointIndex, 1);
+        
+        await sessionRef.update({
+            points: points,
+            updatedAt: firebase.firestore.Timestamp.now()
+        });
+        
+        if (point.recordingId) {
+            try {
+                const recordingRef = db.collection('users').doc(userId)
+                    .collection('recordings').doc(point.recordingId);
+                await recordingRef.update({
+                    extractedPointCount: points.length
+                });
+            } catch (e) {
+                // Ignore
+            }
+        }
+        
+        this.discussionPoints = this.discussionPoints.filter(p => p.id !== pointId);
+    }
+    
+    /**
+     * Delete all selected tasks
+     */
+    async deleteSelectedTasks() {
+        const count = this.selectedTasks.size;
+        if (count === 0) return;
+        
+        if (!confirm(`Are you sure you want to delete ${count} task${count > 1 ? 's' : ''}?`)) {
+            return;
+        }
+        
+        // Convert Set to array and delete
+        const taskIds = Array.from(this.selectedTasks);
+        this.tasks = this.tasks.filter(t => !taskIds.includes(t.id));
+        
+        // Clear selections
+        this.selectedTasks.clear();
+        
+        // Save and re-render
+        await this.saveTasks();
+        this.renderTasks();
+        
+        this.showToast(`🗑️ Deleted ${count} task${count > 1 ? 's' : ''}`);
+    }
+    
+    // ==================== END BULK SELECTION METHODS ====================
+    
+    // ==================== MANUAL ENTRY METHODS ====================
+    
+    /**
+     * Show the Add Discussion Point modal
+     */
+    showAddDiscussionModal() {
+        const modal = document.getElementById('addDiscussionModal');
+        if (modal) {
+            modal.style.display = 'flex';
+            // Reset form
+            document.getElementById('addDiscussionForm').reset();
+        }
+    }
+    
+    /**
+     * Hide the Add Discussion Point modal
+     */
+    hideAddDiscussionModal() {
+        const modal = document.getElementById('addDiscussionModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Setup event listeners for the Add Discussion Point modal
+     */
+    setupAddDiscussionModal() {
+        const modal = document.getElementById('addDiscussionModal');
+        const closeBtn = document.getElementById('closeDiscussionModalBtn');
+        const cancelBtn = document.getElementById('cancelDiscussionBtn');
+        const form = document.getElementById('addDiscussionForm');
+        
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.hideAddDiscussionModal());
+        }
+        
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => this.hideAddDiscussionModal());
+        }
+        
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) this.hideAddDiscussionModal();
+            });
+        }
+        
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await this.saveManualDiscussionPoint();
+            });
+        }
+    }
+    
+    /**
+     * Save a manually entered discussion point
+     */
+    async saveManualDiscussionPoint() {
+        const saveBtn = document.getElementById('saveDiscussionBtn');
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+        }
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                this.showToast('Please sign in first');
+                return;
+            }
+            
+            const content = document.getElementById('discussionContent').value.trim();
+            if (!content) {
+                this.showToast('Please enter content');
+                return;
+            }
+            
+            const type = document.getElementById('discussionType').value;
+            const speaker = document.getElementById('discussionSpeaker').value.trim();
+            const dateTimeValue = document.getElementById('discussionDateTime').value;
+            const location = document.getElementById('discussionLocation').value.trim();
+            
+            const db = firebase.firestore();
+            const userId = user.uid;
+            
+            // Create a new conversation session for manual entries
+            const sessionId = 'manual_' + Date.now();
+            const pointId = 'point_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            const newPoint = {
+                id: pointId,
+                content: content,
+                type: type,
+                speaker: speaker || null,
+                mentionedDateTime: dateTimeValue ? new Date(dateTimeValue).toISOString() : null,
+                location: location || null,
+                createdAt: new Date().toISOString(),
+                addedToTaskList: false,
+                isManual: true
+            };
+            
+            // Check if there's an existing manual session for today
+            const today = new Date().toISOString().split('T')[0];
+            const manualSessionId = `manual_${today}`;
+            
+            const sessionRef = db.collection('users').doc(userId)
+                .collection('conversationSessions').doc(manualSessionId);
+            
+            const sessionDoc = await sessionRef.get();
+            
+            if (sessionDoc.exists) {
+                // Add to existing session
+                const sessionData = sessionDoc.data();
+                const points = sessionData.points || [];
+                points.push(newPoint);
+                
+                await sessionRef.update({
+                    points: points,
+                    updatedAt: firebase.firestore.Timestamp.now()
+                });
+            } else {
+                // Create new session
+                await sessionRef.set({
+                    startedAt: firebase.firestore.Timestamp.now(),
+                    updatedAt: firebase.firestore.Timestamp.now(),
+                    isManual: true,
+                    points: [newPoint]
+                });
+            }
+            
+            this.hideAddDiscussionModal();
+            this.showToast('💬 Discussion point added!');
+            
+            // The real-time listener will update the UI
+            
+        } catch (error) {
+            console.error('Error saving discussion point:', error);
+            this.showToast(`Failed to save: ${error.message}`);
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Add Discussion Point';
+            }
+        }
+    }
+    
+    /**
+     * Show the Add Task modal
+     */
+    showAddTaskModal() {
+        const modal = document.getElementById('addTaskModal');
+        if (modal) {
+            modal.style.display = 'flex';
+            // Reset form
+            document.getElementById('addTaskForm').reset();
+        }
+    }
+    
+    /**
+     * Hide the Add Task modal
+     */
+    hideAddTaskModal() {
+        const modal = document.getElementById('addTaskModal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Setup event listeners for the Add Task modal
+     */
+    setupAddTaskModal() {
+        const modal = document.getElementById('addTaskModal');
+        const closeBtn = document.getElementById('closeTaskModalBtn');
+        const cancelBtn = document.getElementById('cancelTaskBtn');
+        const form = document.getElementById('addTaskForm');
+        
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.hideAddTaskModal());
+        }
+        
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => this.hideAddTaskModal());
+        }
+        
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) this.hideAddTaskModal();
+            });
+        }
+        
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await this.saveManualTask();
+            });
+        }
+    }
+    
+    /**
+     * Save a manually entered task
+     */
+    async saveManualTask() {
+        const saveBtn = document.getElementById('saveTaskBtn');
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+        }
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                this.showToast('Please sign in first');
+                return;
+            }
+            
+            const title = document.getElementById('taskTitle').value.trim();
+            if (!title) {
+                this.showToast('Please enter a task title');
+                return;
+            }
+            
+            const details = document.getElementById('taskDetails').value.trim();
+            const category = document.getElementById('taskCategory').value;
+            const dueDateValue = document.getElementById('taskDueDate').value;
+            const location = document.getElementById('taskLocation').value.trim();
+            const priority = document.getElementById('taskPriority').value;
+            
+            const newTask = {
+                id: 'task_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                title: title,
+                details: details || null,
+                category: category,
+                suggestedDate: dueDateValue ? new Date(dueDateValue).toISOString() : null,
+                location: location || null,
+                priority: priority ? parseInt(priority) : null,
+                participants: [],
+                subtasks: [],
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                addedToCalendar: false,
+                status: 'pending',
+                isManual: true
+            };
+            
+            // Add to local tasks
+            this.tasks.unshift(newTask);
+            
+            // Save to Firebase
+            await this.saveTasks();
+            
+            // Auto-add to calendar if preference is enabled and task has a due date
+            if (this.autoAddToCalendar && newTask.suggestedDate) {
+                try {
+                    await this.autoAddTaskToCalendar(newTask);
+                } catch (calendarError) {
+                    console.error('Error auto-adding task to calendar:', calendarError);
+                }
+            }
+            
+            this.hideAddTaskModal();
+            this.renderTasks();
+            this.showToast('✅ Task added!');
+            
+        } catch (error) {
+            console.error('Error saving task:', error);
+            this.showToast(`Failed to save: ${error.message}`);
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Add Task';
+            }
+        }
+    }
+    
+    // ==================== END MANUAL ENTRY METHODS ====================
     
     async saveTasks() {
         const userId = firebase.auth().currentUser?.uid;
@@ -473,18 +1320,13 @@ class EventsManager {
             const user = firebase.auth().currentUser;
             if (!user) throw new Error('Not logged in');
             
-            const token = await user.getIdToken();
-            
             // Get user's timezone offset in minutes
             const timezoneOffset = new Date().getTimezoneOffset();
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
             
-            const response = await fetch('/api/calendars/suggest-time', {
+            // Use apiCall helper for proper API URL
+            const result = await apiCall('/calendars/suggest-time', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify({
                     taskTitle: task.title,
                     taskDetails: task.details,
@@ -495,10 +1337,8 @@ class EventsManager {
                 })
             });
             
-            if (!response.ok) throw new Error('Failed to get AI suggestion');
-            
-            const result = await response.json();
             const suggestion = result.data;
+            if (!suggestion) throw new Error('No suggestion returned');
             
             // Use the date/time strings directly from the server (already in user's timezone)
             document.getElementById('eventStartDate').value = suggestion.startDate;
@@ -582,8 +1422,6 @@ class EventsManager {
             const user = firebase.auth().currentUser;
             if (!user) throw new Error('Not logged in');
             
-            const token = await user.getIdToken();
-            
             // Build event data
             const startDate = document.getElementById('eventStartDate').value;
             const startTime = document.getElementById('eventStartTime').value;
@@ -599,18 +1437,13 @@ class EventsManager {
                 taskId: task.id
             };
             
-            const response = await fetch('/api/calendars/events', {
+            // Use apiCall helper for proper API URL
+            const result = await apiCall('/calendars/events', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify(eventData)
             });
             
-            if (!response.ok) throw new Error('Failed to create event');
-            
-            const result = await response.json();
+            if (!result.success && !result.data) throw new Error('Failed to create event');
             
             // Update local task
             task.addedToCalendar = true;
@@ -679,9 +1512,9 @@ async function autoAddAllToCalendar() {
         return;
     }
     
-    // Filter tasks that can be added (have suggested date and not already added)
+    // Filter tasks that can be added (not already added to calendar and not completed)
     const tasksToAdd = window.eventsManager.tasks.filter(task => 
-        !task.addedToCalendar && !task.completed
+        !task.addedToCalendar && task.status !== 'completed'
     );
     
     if (tasksToAdd.length === 0) {
@@ -698,7 +1531,6 @@ async function autoAddAllToCalendar() {
         const user = firebase.auth().currentUser;
         if (!user) throw new Error('Not logged in');
         
-        const token = await user.getIdToken();
         const timezoneOffset = new Date().getTimezoneOffset();
         
         let addedCount = 0;
@@ -711,12 +1543,9 @@ async function autoAddAllToCalendar() {
             try {
                 // First, get AI time suggestion for this task
                 // Pass already used slots to avoid overlaps
-                const suggestResponse = await fetch('/api/calendars/suggest-time', {
+                // Use apiCall helper for proper API URL
+                const suggestResult = await apiCall('/calendars/suggest-time', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
                     body: JSON.stringify({
                         taskTitle: task.title,
                         taskDetails: task.details,
@@ -727,10 +1556,8 @@ async function autoAddAllToCalendar() {
                     })
                 });
                 
-                if (!suggestResponse.ok) throw new Error('Failed to get time suggestion');
-                
-                const suggestResult = await suggestResponse.json();
                 const suggestion = suggestResult.data;
+                if (!suggestion) throw new Error('Failed to get time suggestion');
                 
                 // Build event data
                 const startDateTime = `${suggestion.startDate}T${suggestion.startTime}:00`;
@@ -745,17 +1572,13 @@ async function autoAddAllToCalendar() {
                     taskId: task.id
                 };
                 
-                // Create the calendar event
-                const createResponse = await fetch('/api/calendars/events', {
+                // Create the calendar event using apiCall helper
+                const createResult = await apiCall('/calendars/events', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
                     body: JSON.stringify(eventData)
                 });
                 
-                if (!createResponse.ok) throw new Error('Failed to create event');
+                if (!createResult.success && !createResult.data) throw new Error('Failed to create event');
                 
                 // Track this slot as used to prevent overlaps
                 usedSlots.push({
@@ -775,6 +1598,9 @@ async function autoAddAllToCalendar() {
             // Update progress
             btnText.textContent = `Adding ${addedCount + failedCount}/${tasksToAdd.length}...`;
         }
+        
+        // Save updated tasks to Firebase (to persist addedToCalendar flags)
+        await window.eventsManager.saveTasks();
         
         // Refresh task list
         window.eventsManager.renderTasks();

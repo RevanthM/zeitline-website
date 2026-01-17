@@ -71,6 +71,13 @@ CRITICAL RULES:
 3. If the transcript has no clear tasks or discussion points, return EMPTY arrays
 4. Do NOT invent or make up any content - only use what is actually said
 
+DEDUPLICATION RULES (VERY IMPORTANT):
+5. NEVER create multiple user_tasks for the same event/meeting/appointment
+6. If someone says "put X on my calendar", "add X to calendar", "schedule X", or "I'll calendar X" - extract ONLY the event X as a single user_task, NOT a separate "add to calendar" task
+7. When the same event is mentioned multiple times or described in different ways, consolidate into ONE user_task
+8. Example: "I'll put on my calendar the meeting with Jake tomorrow at 4pm" = ONE task titled "Meeting with Jake", NOT two tasks
+9. The action of adding to calendar is automatic - never create a task for the action of calendaring itself
+
 This is a voice memo recorded by the user. Extract:
 1. Discussion points and topics that are ACTUALLY mentioned
 2. Tasks, to-dos, and action items - ONLY if explicitly stated (e.g., "you need to do X", "get X done by Y", "I need to X")
@@ -91,6 +98,7 @@ For user_tasks (ONLY if explicitly stated as something to do):
 - suggestedDateTime: ISO date string if deadline mentioned (e.g., "Tuesday" = next Tuesday), null otherwise
 - priority: 1 (high), 2 (medium), 3 (low) based on urgency
 - category: work, personal, meeting, call, errand, health, other
+- IMPORTANT: If user mentions adding something to calendar, extract the EVENT being added, not the action of adding
 
 IMPORTANT: If the transcript is empty, unclear, just noise, or contains no actionable content, return:
 {"conversation_points": [], "user_tasks": []}
@@ -193,13 +201,17 @@ async function saveExtractionResults(
     participants: task.participants || [],
     subtasks: [],
     suggestedDate: task.suggestedDateTime || null,
+    suggestedEndDate: null, // Required by iOS model
+    isAllDay: task.isAllDay || false, // Required by iOS model
     priority: task.priority || null,
     category: task.category || "other",
     audioTimecode: 0,
+    transcriptSection: null, // Required by iOS model
     sessionId: recordingId,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     addedToCalendar: false,
+    calendarEventId: null,
     status: "pending"
   }));
 

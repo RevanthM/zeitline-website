@@ -2227,6 +2227,23 @@
             </div>
             
             <div class="event-detail-body">
+                <div class="event-detail-section" id="eventTimeSection">
+                    <div class="event-detail-section-title">Time</div>
+                    <div class="event-detail-section-content">
+                        <div class="event-detail-info-item">
+                            <svg class="event-detail-info-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                                <line x1="16" y1="2" x2="16" y2="6"/>
+                                <line x1="8" y1="2" x2="8" y2="6"/>
+                                <line x1="3" y1="10" x2="21" y2="10"/>
+                            </svg>
+                            <div class="event-detail-info-content">
+                                <div class="event-detail-info-value" id="eventTimeDisplay">—</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="event-detail-section" id="eventDescriptionSection">
                     <div class="event-detail-section-title">Description</div>
                     <div class="event-detail-section-content">
@@ -2510,8 +2527,8 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-    <script src="/js/firebase-config.js?v=2.1"></script>
-    <script src="/js/calendar.js?v=10.2"></script>
+    <script src="/js/firebase-config.js?v=2.3"></script>
+    <script src="/js/calendar.js?v=10.3"></script>
 </body>
 </html>
 

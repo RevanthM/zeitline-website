@@ -19,6 +19,10 @@ class RecordingsManager {
         this.recordingStartTime = null;
         this.recordingTimer = null;
         
+        // Multi-select state
+        this.isSelectMode = false;
+        this.selectedRecordings = new Set();
+        
         this.init();
     }
     
@@ -281,6 +285,11 @@ class RecordingsManager {
         // Render recording cards
         container.innerHTML = filtered.map(rec => this.createRecordingCard(rec)).join('');
         
+        // Maintain selection mode class if active
+        if (this.isSelectMode) {
+            container.classList.add('selection-mode');
+        }
+        
         // Add click listeners
         container.querySelectorAll('.recording-card').forEach(card => {
             card.addEventListener('click', () => {
@@ -289,14 +298,31 @@ class RecordingsManager {
                 if (recording) this.selectRecording(recording);
             });
         });
+        
+        // Update selection UI if in select mode
+        if (this.isSelectMode) {
+            this.updateSelectionUI();
+        }
     }
     
     createRecordingCard(recording) {
         const isActive = this.currentRecording?.id === recording.id;
         const hasTranscript = !!recording.transcript;
+        const isSelected = this.selectedRecordings.has(recording.id);
         
         return `
-            <div class="recording-card ${isActive ? 'active' : ''}" data-id="${recording.id}">
+            <div class="recording-card ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}" data-id="${recording.id}">
+                <input type="checkbox" class="recording-select-checkbox" 
+                    ${isSelected ? 'checked' : ''} 
+                    onclick="event.stopPropagation(); recordingsManager.toggleRecordingSelection('${recording.id}')"
+                    title="Select recording">
+                <button class="recording-delete-btn" onclick="event.stopPropagation(); recordingsManager.showDeleteConfirmation('${recording.id}')" title="Delete recording">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        <line x1="10" y1="11" x2="10" y2="17"/>
+                        <line x1="14" y1="11" x2="14" y2="17"/>
+                    </svg>
+                </button>
                 <div class="recording-header">
                     <div class="recording-icon">🎙️</div>
                     <div class="recording-info">
@@ -591,7 +617,7 @@ class RecordingsManager {
                         if (noPoints) noPoints.style.display = 'none';
                         if (pointsList) {
                             pointsList.style.display = 'block';
-                            pointsList.innerHTML = points.map(point => this.createPointHTML(point)).join('');
+                            pointsList.innerHTML = points.map((point, idx) => this.createPointHTML(point, idx)).join('');
                         }
                     }
                 }
@@ -793,13 +819,18 @@ class RecordingsManager {
                     console.log('Hidden noPoints');
                 }
                 if (pointsList) {
-                    const pointsHTML = extractedPoints.map(point => `
-                        <div class="point-item" style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.6rem; border-bottom: 1px solid var(--border-subtle);">
+                    const pointsHTML = extractedPoints.map((point, idx) => `
+                        <div class="point-item" data-point-index="${idx}" style="display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.6rem; border-bottom: 1px solid var(--border-subtle);">
                             <span class="point-type-badge" style="font-size: 0.65rem; padding: 0.15rem 0.4rem; border-radius: 4px; background: rgba(139, 92, 246, 0.2); color: #8b5cf6; white-space: nowrap;">${(point.type || 'other').replace('_', ' ')}</span>
                             <div class="point-content" style="flex: 1; font-size: 0.85rem;">
                                 ${point.content}
                                 ${point.speaker ? `<span style="opacity: 0.6;"> — ${point.speaker}</span>` : ''}
                             </div>
+                            <button class="point-delete-btn" onclick="recordingsManager.deleteDiscussionPoint(${idx})" title="Delete discussion point">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                                </svg>
+                            </button>
                         </div>
                     `).join('');
                     
@@ -855,17 +886,557 @@ class RecordingsManager {
         `;
     }
     
-    createPointHTML(point) {
+    createPointHTML(point, index) {
         const typeClass = (point.type || 'other').replace('_', '-');
         return `
-            <div class="point-item">
+            <div class="point-item" data-point-index="${index}">
                 <span class="point-type-badge ${typeClass}">${(point.type || 'other').replace('_', ' ')}</span>
                 <div class="point-content">
                     ${point.content}
                     ${point.speaker ? `<span style="opacity: 0.6;"> — ${point.speaker}</span>` : ''}
                 </div>
+                <button class="point-delete-btn" onclick="recordingsManager.deleteDiscussionPoint(${index})" title="Delete discussion point">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
             </div>
         `;
+    }
+    
+    /**
+     * Delete a discussion point from the current recording
+     * @param {number} pointIndex - The index of the point to delete
+     */
+    async deleteDiscussionPoint(pointIndex) {
+        if (!this.currentRecording) {
+            this.showToast('No recording selected', 'warning');
+            return;
+        }
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                this.showToast('Please sign in first', 'warning');
+                return;
+            }
+            
+            const db = firebase.firestore();
+            const userId = user.uid;
+            const sessionRef = db.collection('users').doc(userId)
+                .collection('conversationSessions').doc(this.currentRecording.id);
+            
+            // Fetch current points
+            const sessionDoc = await sessionRef.get();
+            if (!sessionDoc.exists) {
+                this.showToast('Discussion points not found', 'error');
+                return;
+            }
+            
+            const sessionData = sessionDoc.data();
+            const points = sessionData.points || [];
+            
+            if (pointIndex < 0 || pointIndex >= points.length) {
+                this.showToast('Invalid point index', 'error');
+                return;
+            }
+            
+            // Remove the point at the specified index
+            points.splice(pointIndex, 1);
+            
+            // Update Firestore
+            await sessionRef.update({
+                points: points,
+                updatedAt: firebase.firestore.Timestamp.now()
+            });
+            
+            // Also update the recording's extractedPointCount
+            const recordingRef = db.collection('users').doc(userId)
+                .collection('recordings').doc(this.currentRecording.id);
+            await recordingRef.update({
+                extractedPointCount: points.length
+            });
+            
+            // Update local state
+            if (this.currentRecording) {
+                this.currentRecording.extractedPointCount = points.length;
+            }
+            
+            // Update UI
+            const pointsList = document.getElementById('conversationPointsList');
+            const noPoints = document.getElementById('noPoints');
+            
+            if (points.length > 0) {
+                if (pointsList) {
+                    pointsList.innerHTML = points.map((point, idx) => this.createPointHTML(point, idx)).join('');
+                }
+            } else {
+                if (pointsList) pointsList.style.display = 'none';
+                if (noPoints) noPoints.style.display = 'block';
+            }
+            
+            // Update extraction status display
+            const extractionStatus = document.getElementById('extractionStatus');
+            if (extractionStatus) {
+                const taskCount = this.currentRecording?.extractedTaskCount || 0;
+                extractionStatus.innerHTML = `✅ Extracted (${taskCount} tasks, ${points.length} points) <button id="reExtractBtn" style="background: transparent; border: 1px solid var(--border-subtle); color: var(--text-muted); padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.65rem; margin-left: 0.5rem;">🔄</button>`;
+                
+                setTimeout(() => {
+                    const reExtractBtn = document.getElementById('reExtractBtn');
+                    if (reExtractBtn) {
+                        reExtractBtn.addEventListener('click', () => this.extractTasksFromRecording(this.currentRecording));
+                    }
+                }, 0);
+            }
+            
+            this.showToast('Discussion point deleted', 'success');
+            
+        } catch (error) {
+            console.error('Error deleting discussion point:', error);
+            this.showToast(`Failed to delete: ${error.message}`, 'error');
+        }
+    }
+    
+    /**
+     * Show delete confirmation modal for a recording
+     * @param {string} recordingId - The ID of the recording to delete
+     */
+    showDeleteConfirmation(recordingId) {
+        const recording = this.recordings.find(r => r.id === recordingId);
+        if (!recording) {
+            this.showToast('Recording not found', 'error');
+            return;
+        }
+        
+        // Create modal HTML
+        const modalHTML = `
+            <div class="delete-modal-overlay" id="deleteModal" onclick="if(event.target === this) recordingsManager.hideDeleteConfirmation()">
+                <div class="delete-modal-content">
+                    <div class="delete-modal-icon">🗑️</div>
+                    <h3 class="delete-modal-title">Delete Recording?</h3>
+                    <p class="delete-modal-message">
+                        Are you sure you want to delete this recording from <strong>${this.formatDate(recording.recordedAt)}</strong>?
+                        <br><br>
+                        This will permanently delete the audio file${recording.transcript ? ', transcript,' : ''} and any extracted tasks or discussion points.
+                        <br><br>
+                        <span style="color: #ef4444;">This action cannot be undone.</span>
+                    </p>
+                    <div class="delete-modal-actions">
+                        <button class="delete-modal-cancel" onclick="recordingsManager.hideDeleteConfirmation()">
+                            Cancel
+                        </button>
+                        <button class="delete-modal-confirm" id="confirmDeleteBtn" onclick="recordingsManager.deleteRecording('${recordingId}')">
+                            Delete Recording
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add modal to body
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+    
+    /**
+     * Hide the delete confirmation modal
+     */
+    hideDeleteConfirmation() {
+        const modal = document.getElementById('deleteModal');
+        if (modal) {
+            modal.remove();
+        }
+    }
+    
+    /**
+     * Delete a recording from Firebase
+     * @param {string} recordingId - The ID of the recording to delete
+     */
+    async deleteRecording(recordingId) {
+        const confirmBtn = document.getElementById('confirmDeleteBtn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Deleting...';
+        }
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                throw new Error('Please sign in first');
+            }
+            
+            const userId = user.uid;
+            const db = firebase.firestore();
+            const storage = firebase.storage();
+            
+            // Find the recording to get its filename
+            const recording = this.recordings.find(r => r.id === recordingId);
+            if (!recording) {
+                throw new Error('Recording not found');
+            }
+            
+            console.log('Deleting recording:', recordingId, recording.filename);
+            
+            // 1. Delete from Firebase Storage if audio URL exists
+            if (recording.audioUrl || recording.filename) {
+                try {
+                    const filename = recording.filename || recording.watchFilename;
+                    if (filename) {
+                        const storageRef = storage.ref(`recordings/${userId}/${filename}`);
+                        await storageRef.delete();
+                        console.log('Audio file deleted from Storage');
+                    }
+                } catch (storageError) {
+                    // Storage file might not exist, log but continue
+                    console.log('Storage delete error (may not exist):', storageError.code);
+                }
+            }
+            
+            // 2. Delete associated conversation session if exists
+            try {
+                const sessionRef = db.collection('users').doc(userId)
+                    .collection('conversationSessions').doc(recordingId);
+                const sessionDoc = await sessionRef.get();
+                if (sessionDoc.exists) {
+                    await sessionRef.delete();
+                    console.log('Conversation session deleted');
+                }
+            } catch (sessionError) {
+                console.log('Session delete error:', sessionError);
+            }
+            
+            // 3. Remove tasks associated with this recording from master task list
+            try {
+                const taskListRef = db.collection('users').doc(userId)
+                    .collection('taskLists').doc('master');
+                const taskListDoc = await taskListRef.get();
+                if (taskListDoc.exists) {
+                    const taskListData = taskListDoc.data();
+                    const tasks = taskListData.tasks || [];
+                    const filteredTasks = tasks.filter(task => task.sessionId !== recordingId);
+                    if (filteredTasks.length !== tasks.length) {
+                        await taskListRef.update({ tasks: filteredTasks });
+                        console.log(`Removed ${tasks.length - filteredTasks.length} tasks from master list`);
+                    }
+                }
+            } catch (taskError) {
+                console.log('Task list update error:', taskError);
+            }
+            
+            // 4. Delete the recording document from Firestore
+            await db.collection('users').doc(userId)
+                .collection('recordings').doc(recordingId).delete();
+            console.log('Recording document deleted from Firestore');
+            
+            // 5. Update local state
+            this.recordings = this.recordings.filter(r => r.id !== recordingId);
+            
+            // If the deleted recording was currently selected, clear the player
+            if (this.currentRecording?.id === recordingId) {
+                this.currentRecording = null;
+                const playerEmpty = document.getElementById('playerEmpty');
+                const playerContent = document.getElementById('playerContent');
+                if (playerEmpty) playerEmpty.style.display = 'block';
+                if (playerContent) playerContent.classList.remove('active');
+                
+                // Stop any playing audio
+                if (this.audioPlayer) {
+                    this.audioPlayer.pause();
+                    this.audioPlayer.src = '';
+                }
+                this.isPlaying = false;
+                this.updatePlayButton();
+            }
+            
+            // 6. Hide the modal
+            this.hideDeleteConfirmation();
+            
+            // 7. Re-render the list
+            this.renderRecordings();
+            this.updateStats();
+            
+            this.showToast('✅ Recording deleted successfully', 'success');
+            
+        } catch (error) {
+            console.error('Error deleting recording:', error);
+            this.showToast(`❌ Failed to delete: ${error.message}`, 'error');
+            
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Delete Recording';
+            }
+        }
+    }
+    
+    /**
+     * Toggle selection mode (multi-select)
+     */
+    toggleSelectMode() {
+        this.isSelectMode = !this.isSelectMode;
+        
+        const selectModeBtn = document.getElementById('selectModeBtn');
+        const bulkActionsBar = document.getElementById('bulkActionsBar');
+        const recordingsList = document.getElementById('recordingsList');
+        
+        if (this.isSelectMode) {
+            // Enable selection mode
+            selectModeBtn?.classList.add('active');
+            bulkActionsBar?.classList.add('visible');
+            recordingsList?.classList.add('selection-mode');
+        } else {
+            // Disable selection mode
+            selectModeBtn?.classList.remove('active');
+            bulkActionsBar?.classList.remove('visible');
+            recordingsList?.classList.remove('selection-mode');
+            
+            // Clear selections
+            this.selectedRecordings.clear();
+            this.updateSelectionUI();
+            this.renderRecordings();
+        }
+    }
+    
+    /**
+     * Toggle selection for a specific recording
+     * @param {string} recordingId - The ID of the recording to toggle
+     */
+    toggleRecordingSelection(recordingId) {
+        if (this.selectedRecordings.has(recordingId)) {
+            this.selectedRecordings.delete(recordingId);
+        } else {
+            this.selectedRecordings.add(recordingId);
+        }
+        
+        // Update the card's visual state
+        const card = document.querySelector(`.recording-card[data-id="${recordingId}"]`);
+        if (card) {
+            card.classList.toggle('selected', this.selectedRecordings.has(recordingId));
+        }
+        
+        this.updateSelectionUI();
+    }
+    
+    /**
+     * Toggle select all recordings
+     */
+    toggleSelectAll() {
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        const isChecked = selectAllCheckbox?.checked;
+        
+        if (isChecked) {
+            // Select all visible recordings
+            this.recordings.forEach(rec => {
+                this.selectedRecordings.add(rec.id);
+            });
+        } else {
+            // Deselect all
+            this.selectedRecordings.clear();
+        }
+        
+        this.updateSelectionUI();
+        this.renderRecordings();
+    }
+    
+    /**
+     * Update the selection UI (count, button states, etc.)
+     */
+    updateSelectionUI() {
+        const selectedCount = document.getElementById('selectedCount');
+        const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+        const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+        
+        const count = this.selectedRecordings.size;
+        
+        if (selectedCount) {
+            selectedCount.textContent = `${count} selected`;
+        }
+        
+        if (bulkDeleteBtn) {
+            bulkDeleteBtn.disabled = count === 0;
+        }
+        
+        // Update select all checkbox state
+        if (selectAllCheckbox && this.recordings.length > 0) {
+            selectAllCheckbox.checked = count === this.recordings.length;
+            selectAllCheckbox.indeterminate = count > 0 && count < this.recordings.length;
+        }
+    }
+    
+    /**
+     * Show bulk delete confirmation modal
+     */
+    showBulkDeleteConfirmation() {
+        const count = this.selectedRecordings.size;
+        
+        if (count === 0) {
+            this.showToast('No recordings selected', 'warning');
+            return;
+        }
+        
+        // Create modal HTML
+        const modalHTML = `
+            <div class="delete-modal-overlay" id="deleteModal" onclick="if(event.target === this) recordingsManager.hideDeleteConfirmation()">
+                <div class="delete-modal-content">
+                    <div class="delete-modal-icon">🗑️</div>
+                    <h3 class="delete-modal-title">Delete ${count} Recording${count > 1 ? 's' : ''}?</h3>
+                    <p class="delete-modal-message">
+                        Are you sure you want to delete <strong>${count} recording${count > 1 ? 's' : ''}</strong>?
+                        <br><br>
+                        This will permanently delete all audio files, transcripts, and any extracted tasks or discussion points for these recordings.
+                        <br><br>
+                        <span style="color: #ef4444;">This action cannot be undone.</span>
+                    </p>
+                    <div class="delete-modal-actions">
+                        <button class="delete-modal-cancel" onclick="recordingsManager.hideDeleteConfirmation()">
+                            Cancel
+                        </button>
+                        <button class="delete-modal-confirm" id="confirmBulkDeleteBtn" onclick="recordingsManager.bulkDeleteRecordings()">
+                            Delete ${count} Recording${count > 1 ? 's' : ''}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // Add modal to body
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+    }
+    
+    /**
+     * Bulk delete all selected recordings
+     */
+    async bulkDeleteRecordings() {
+        const confirmBtn = document.getElementById('confirmBulkDeleteBtn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Deleting...';
+        }
+        
+        const selectedIds = Array.from(this.selectedRecordings);
+        const totalCount = selectedIds.length;
+        let successCount = 0;
+        let failCount = 0;
+        
+        this.showToast(`🗑️ Deleting ${totalCount} recordings...`, 'info');
+        
+        try {
+            const user = firebase.auth().currentUser;
+            if (!user) {
+                throw new Error('Please sign in first');
+            }
+            
+            const userId = user.uid;
+            const db = firebase.firestore();
+            const storage = firebase.storage();
+            
+            // Process deletions sequentially to avoid rate limits
+            for (const recordingId of selectedIds) {
+                try {
+                    const recording = this.recordings.find(r => r.id === recordingId);
+                    if (!recording) continue;
+                    
+                    // 1. Delete from Firebase Storage if audio URL exists
+                    if (recording.audioUrl || recording.filename) {
+                        try {
+                            const filename = recording.filename || recording.watchFilename;
+                            if (filename) {
+                                const storageRef = storage.ref(`recordings/${userId}/${filename}`);
+                                await storageRef.delete();
+                            }
+                        } catch (storageError) {
+                            console.log('Storage delete error (may not exist):', storageError.code);
+                        }
+                    }
+                    
+                    // 2. Delete associated conversation session
+                    try {
+                        const sessionRef = db.collection('users').doc(userId)
+                            .collection('conversationSessions').doc(recordingId);
+                        const sessionDoc = await sessionRef.get();
+                        if (sessionDoc.exists) {
+                            await sessionRef.delete();
+                        }
+                    } catch (sessionError) {
+                        console.log('Session delete error:', sessionError);
+                    }
+                    
+                    // 3. Delete the recording document
+                    await db.collection('users').doc(userId)
+                        .collection('recordings').doc(recordingId).delete();
+                    
+                    successCount++;
+                    
+                    // Update progress in button text
+                    if (confirmBtn) {
+                        confirmBtn.textContent = `Deleting... (${successCount}/${totalCount})`;
+                    }
+                    
+                } catch (err) {
+                    console.error(`Failed to delete recording ${recordingId}:`, err);
+                    failCount++;
+                }
+            }
+            
+            // 4. Remove deleted tasks from master list (batch operation)
+            try {
+                const taskListRef = db.collection('users').doc(userId)
+                    .collection('taskLists').doc('master');
+                const taskListDoc = await taskListRef.get();
+                if (taskListDoc.exists) {
+                    const taskListData = taskListDoc.data();
+                    const tasks = taskListData.tasks || [];
+                    const filteredTasks = tasks.filter(task => !selectedIds.includes(task.sessionId));
+                    if (filteredTasks.length !== tasks.length) {
+                        await taskListRef.update({ tasks: filteredTasks });
+                    }
+                }
+            } catch (taskError) {
+                console.log('Task list update error:', taskError);
+            }
+            
+            // 5. Update local state
+            this.recordings = this.recordings.filter(r => !selectedIds.includes(r.id));
+            this.selectedRecordings.clear();
+            
+            // If the deleted recording was currently selected, clear the player
+            if (this.currentRecording && selectedIds.includes(this.currentRecording.id)) {
+                this.currentRecording = null;
+                const playerEmpty = document.getElementById('playerEmpty');
+                const playerContent = document.getElementById('playerContent');
+                if (playerEmpty) playerEmpty.style.display = 'block';
+                if (playerContent) playerContent.classList.remove('active');
+                
+                if (this.audioPlayer) {
+                    this.audioPlayer.pause();
+                    this.audioPlayer.src = '';
+                }
+                this.isPlaying = false;
+                this.updatePlayButton();
+            }
+            
+            // 6. Hide modal and exit selection mode
+            this.hideDeleteConfirmation();
+            this.toggleSelectMode();
+            
+            // 7. Re-render the list
+            this.renderRecordings();
+            this.updateStats();
+            
+            // Show result message
+            if (failCount === 0) {
+                this.showToast(`✅ Successfully deleted ${successCount} recording${successCount > 1 ? 's' : ''}`, 'success');
+            } else {
+                this.showToast(`⚠️ Deleted ${successCount} recording${successCount > 1 ? 's' : ''}, ${failCount} failed`, 'warning');
+            }
+            
+        } catch (error) {
+            console.error('Error in bulk delete:', error);
+            this.showToast(`❌ Bulk delete failed: ${error.message}`, 'error');
+            
+            if (confirmBtn) {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = `Delete ${totalCount} Recording${totalCount > 1 ? 's' : ''}`;
+            }
+        }
     }
     
     async togglePlay() {

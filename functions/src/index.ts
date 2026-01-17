@@ -410,6 +410,57 @@ export const onUserDelete = functions.auth.user().onDelete(async (user) => {
   }
 });
 
+/**
+ * Helper function to check if a calendar event already exists
+ * Prevents duplicate events by checking:
+ * 1. Same recordingId + title + start time (within 5 minute tolerance)
+ * 2. Same taskId (if provided)
+ */
+async function checkDuplicateCalendarEvent(
+  db: admin.firestore.Firestore,
+  userId: string,
+  title: string,
+  startTime: Date,
+  recordingId: string,
+  taskId?: string
+): Promise<boolean> {
+  const TIME_TOLERANCE_MS = 5 * 60 * 1000; // 5 minutes
+  const normalizedTitle = title.toLowerCase().trim().replace(/\s+/g, " ");
+  
+  try {
+    // Query calendar events for this recording
+    const eventsRef = db.collection(`users/${userId}/calendar_events`);
+    const snapshot = await eventsRef
+      .where("recordingId", "==", recordingId)
+      .get();
+    
+    for (const doc of snapshot.docs) {
+      const event = doc.data();
+      const eventTitle = (event.title || "").toLowerCase().trim().replace(/\s+/g, " ");
+      const eventStart = new Date(event.start).getTime();
+      const targetStart = startTime.getTime();
+      
+      // Check for duplicate by title + time
+      if (eventTitle === normalizedTitle && 
+          Math.abs(eventStart - targetStart) < TIME_TOLERANCE_MS) {
+        console.log(`🔄 Duplicate event detected: "${title}" at ${startTime.toISOString()} (existing: ${event.id})`);
+        return true;
+      }
+      
+      // Check for duplicate by taskId
+      if (taskId && event.taskId === taskId) {
+        console.log(`🔄 Duplicate event detected by taskId: ${taskId} (existing: ${event.id})`);
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error("Error checking for duplicate calendar event:", error);
+    return false; // On error, allow creation (fail open)
+  }
+}
+
 // Firestore trigger - auto-transcribe and extract tasks when a new recording is created
 export const onRecordingCreate = functions.firestore
   .document("users/{userId}/recordings/{recordingId}")
@@ -417,7 +468,12 @@ export const onRecordingCreate = functions.firestore
     const { userId, recordingId } = context.params;
     let recordingData = snapshot.data();
     
-    console.log(`New recording created: ${recordingId} for user ${userId}`);
+    console.log(`🆕 === onRecordingCreate triggered ===`);
+    console.log(`Recording ID: ${recordingId}`);
+    console.log(`User ID: ${userId}`);
+    console.log(`Has audioUrl: ${!!recordingData.audioUrl}`);
+    console.log(`Has transcript: ${!!recordingData.transcript && recordingData.transcript.trim().length > 0}`);
+    console.log(`tasksExtracted: ${recordingData.tasksExtracted}`);
     
     // Check if recording has a transcript
     let transcript = recordingData.transcript;
@@ -436,12 +492,14 @@ export const onRecordingCreate = functions.firestore
           transcript = transcriptionResult;
           
           // Update the recording with the transcript
+          // Set extractionInProgress flag to prevent onRecordingUpdate from also extracting tasks
           await snapshot.ref.update({
             transcript: transcript,
             isTranscribing: false,
             transcribedAt: admin.firestore.FieldValue.serverTimestamp(),
             transcriptionModel: "whisper-1",
             updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            extractionInProgress: true,  // Prevent race condition with onRecordingUpdate
           });
           
           console.log(`✅ Whisper transcription complete: ${transcript.substring(0, 100)}...`);
@@ -472,38 +530,142 @@ export const onRecordingCreate = functions.firestore
       return;
     }
     
-    // Check if already extracted
+    // Check if already extracted or extraction is in progress
     if (recordingData.tasksExtracted) {
       console.log("Tasks already extracted, skipping");
       return;
     }
     
-    console.log(`Auto-extracting tasks from recording ${recordingId}...`);
+    if (recordingData.extractionInProgress) {
+      console.log("Extraction already in progress, skipping");
+      return;
+    }
+    
+    console.log(`🔄 Auto-extracting tasks from recording ${recordingId}...`);
+    console.log(`📝 Transcript preview: "${transcript.substring(0, 200)}..."`);
+    
+    // Set extraction lock FIRST to prevent race condition with onRecordingUpdate
+    // Use a transaction to ensure atomicity
+    const db = admin.firestore();
+    try {
+      const lockAcquired = await db.runTransaction(async (transaction) => {
+        const docRef = snapshot.ref;
+        const doc = await transaction.get(docRef);
+        const currentData = doc.data();
+        
+        // Double-check conditions inside transaction
+        if (currentData?.extractionInProgress || currentData?.tasksExtracted) {
+          console.log("🔒 Another process already started extraction, skipping");
+          return false;
+        }
+        
+        transaction.update(docRef, {
+          extractionInProgress: true,
+          extractionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+      
+      if (!lockAcquired) {
+        return;
+      }
+      console.log("🔒 Extraction lock acquired in onRecordingCreate");
+    } catch (lockError) {
+      console.error("Failed to acquire extraction lock:", lockError);
+      return;
+    }
     
     try {
       const { OpenAI } = await import("openai");
       
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) {
-        console.error("OpenAI API key not configured");
+        console.error("❌ OpenAI API key not configured - cannot extract tasks");
+        await snapshot.ref.update({
+          tasksExtracted: false,
+          extractionError: "OpenAI API key not configured",
+          extractionInProgress: false,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
         return;
       }
       
       const openai = new OpenAI({ apiKey });
       
-      // Get current date for relative date parsing
-      const currentDate = new Date();
-      const currentDateStr = currentDate.toISOString().split('T')[0];
+      // Fetch user's timezone from their profile
+      // Note: db already initialized above for lock acquisition
+      let userTimezone = "America/New_York"; // Default fallback
+      
+      try {
+        const userDoc = await db.collection("users").doc(userId).get();
+        const userData = userDoc.data();
+        userTimezone = userData?.personal?.timezone || "America/New_York";
+        console.log(`📍 User timezone: ${userTimezone}`);
+      } catch (tzError) {
+        console.error("⚠️ Error fetching user timezone, using default:", tzError);
+      }
+      
+      // Get current date/time in user's timezone
+      const now = new Date();
+      let currentDateStr: string;
+      let currentTimeStr: string;
+      let tomorrowDateStr: string;
+      
+      try {
+        const dateOptions: Intl.DateTimeFormatOptions = {
+          timeZone: userTimezone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        };
+        const timeOptions: Intl.DateTimeFormatOptions = {
+          timeZone: userTimezone,
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        };
+        
+        // Format current date as YYYY-MM-DD
+        const dateFormatter = new Intl.DateTimeFormat('en-CA', dateOptions);
+        currentDateStr = dateFormatter.format(now);
+        
+        // Format current time as HH:MM
+        const timeFormatter = new Intl.DateTimeFormat('en-GB', timeOptions);
+        currentTimeStr = timeFormatter.format(now);
+        
+        // Calculate tomorrow's date in user's timezone
+        const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        tomorrowDateStr = dateFormatter.format(tomorrow);
+      } catch (formatError) {
+        console.error("⚠️ Error formatting dates, using UTC fallback:", formatError);
+        currentDateStr = now.toISOString().split('T')[0];
+        currentTimeStr = now.toISOString().split('T')[1].substring(0, 5);
+        const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+        tomorrowDateStr = tomorrow.toISOString().split('T')[0];
+      }
+      
+      console.log(`📅 Date context: Today=${currentDateStr}, Time=${currentTimeStr}, Tomorrow=${tomorrowDateStr}`);
       
       const prompt = `You are an AI assistant that analyzes voice memo transcripts to extract actionable items.
 
-Today's date is: ${currentDateStr}
+CURRENT DATE/TIME CONTEXT (in user's local timezone: ${userTimezone}):
+- Today's date: ${currentDateStr}
+- Current time: ${currentTimeStr}
+- Tomorrow's date: ${tomorrowDateStr}
 
 CRITICAL RULES:
 1. ONLY extract items that are EXPLICITLY mentioned in the transcript
 2. NEVER create placeholder, example, sample, or test tasks
 3. If the transcript has no clear tasks or discussion points, return EMPTY arrays
 4. Do NOT invent or make up any content - only use what is actually said
+5. ANY mention of plans, events, appointments, or activities with a date/time MUST be extracted as a user_task
+
+DEDUPLICATION RULES (VERY IMPORTANT):
+6. NEVER create multiple user_tasks for the same event/meeting/appointment
+7. If someone says "put X on my calendar", "add X to calendar", "schedule X", or "I'll calendar X" - extract ONLY the event X as a single user_task, NOT a separate "add to calendar" task
+8. When the same event is mentioned multiple times or described in different ways, consolidate into ONE user_task
+9. Example: "I'll put on my calendar the meeting with Jake tomorrow at 4pm" = ONE task titled "Meeting with Jake", NOT two tasks
+10. The action of adding to calendar is automatic - never create a task for the action of calendaring itself
 
 This is a voice memo recorded by the user. Extract:
 1. Discussion points and topics that are ACTUALLY mentioned
@@ -519,23 +681,34 @@ For conversation_points (ONLY if actually discussed):
 
 For user_tasks - extract if the user mentions ANY of these:
 - Something they need to do ("I need to X", "I have to X", "you need to do X")
-- Plans to attend or go somewhere ("I plan on X", "I'm going to X", "I have X scheduled", "going to X")
+- Plans to attend or go somewhere ("I plan on X", "I'm going to X", "I have X scheduled", "going to X", "attending X")
 - Events or appointments ("my meeting is at X", "birthday party at X", "appointment at X", "party at X")
 - Deadlines ("due by X", "deadline is X")
 - Social events ("seeing family", "dinner with X", "lunch with X")
+- IMPORTANT: If user mentions adding something to calendar, extract the EVENT being added, not the action of adding
 
 Fields for user_tasks:
 - title: Clear, actionable task/event title from the transcript
 - details: Additional context from the transcript
 - location: Where it takes place (if mentioned)
 - participants: People involved or mentioned (e.g., "family", specific names)
-- suggestedDateTime: ISO date string with time if mentioned (e.g., "tomorrow at 4pm" -> calculate from today's date ${currentDateStr}), null otherwise
+- suggestedDateTime: MUST be a complete ISO 8601 datetime string. Use 24-hour time format.
+  DATE/TIME CONVERSION EXAMPLES (based on current context):
+  - "tomorrow at 4pm" = "${tomorrowDateStr}T16:00:00"
+  - "tomorrow at 4 p.m." = "${tomorrowDateStr}T16:00:00"
+  - "today at 3pm" = "${currentDateStr}T15:00:00"
+  - "tonight at 8" = "${currentDateStr}T20:00:00"
+  - "this evening" = "${currentDateStr}T18:00:00"
+  - "tomorrow morning" = "${tomorrowDateStr}T09:00:00"
+  - If only date mentioned, default to 09:00:00
+  - Return null if no date/time is mentioned
 - priority: 1 (high), 2 (medium), 3 (low) based on urgency
 - category: work, personal, meeting, call, errand, health, event, appointment, social, other
 - isEvent: true if this is an event/appointment/social gathering to attend, false if it's a task to complete
 
-IMPORTANT: If the transcript is empty, unclear, just noise, or contains no actionable content, return:
-{"conversation_points": [], "user_tasks": []}
+IMPORTANT: 
+- If the transcript is empty, unclear, just noise, or contains no actionable content, return empty arrays
+- ALWAYS extract plans/events with dates as user_tasks, not just conversation_points
 
 Return ONLY valid JSON:
 {
@@ -558,14 +731,24 @@ ${transcript}`;
       });
 
       const content = completion.choices[0].message.content || "{}";
+      console.log(`📦 Raw OpenAI response: ${content.substring(0, 500)}...`);
+      
       const parsed = JSON.parse(content);
       
       const conversationPoints = parsed.conversation_points || [];
       const userTasks = parsed.user_tasks || [];
       
-      console.log(`Extracted ${conversationPoints.length} points and ${userTasks.length} tasks`);
+      console.log(`✅ Extracted ${conversationPoints.length} conversation points and ${userTasks.length} user tasks`);
       
-      const db = admin.firestore();
+      // Log each extracted task for debugging
+      if (userTasks.length > 0) {
+        userTasks.forEach((task: any, idx: number) => {
+          console.log(`📋 Task ${idx + 1}: "${task.title}" | DateTime: ${task.suggestedDateTime} | Category: ${task.category} | isEvent: ${task.isEvent}`);
+        });
+      } else {
+        console.log(`⚠️ No user_tasks extracted from transcript. Conversation points:`, JSON.stringify(conversationPoints.slice(0, 3)));
+      }
+      
       const batch = db.batch();
       
       // Save conversation points to session
@@ -603,10 +786,12 @@ ${transcript}`;
         participants: task.participants || [],
         subtasks: [],
         suggestedDate: task.suggestedDateTime || null,
+        suggestedEndDate: null, // Required by iOS model
+        isAllDay: task.isAllDay || false, // Required by iOS model
         priority: task.priority || null,
         category: task.category || "other",
-        isEvent: task.isEvent || false,
         audioTimecode: 0,
+        transcriptSection: null, // Required by iOS model
         sessionId: recordingId,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -615,14 +800,98 @@ ${transcript}`;
         status: "pending"
       }));
       
+      // Helper function to parse datetime string in user's timezone
+      function parseLocalDateTime(dateTimeStr: string, timezone: string): Date {
+        // If the string already has timezone info, parse directly
+        if (dateTimeStr.includes('Z') || dateTimeStr.includes('+') || (dateTimeStr.length > 10 && dateTimeStr.lastIndexOf('-') > 10)) {
+          return new Date(dateTimeStr);
+        }
+        
+        // Parse the datetime components
+        const [datePart, timePart] = dateTimeStr.split('T');
+        if (!datePart) return new Date(dateTimeStr);
+        
+        const [year, month, day] = datePart.split('-').map(Number);
+        let hours = 9, minutes = 0, seconds = 0; // Default to 9 AM
+        
+        if (timePart) {
+          const timeParts = timePart.split(':');
+          hours = parseInt(timeParts[0]) || 9;
+          minutes = parseInt(timeParts[1]) || 0;
+          seconds = parseInt(timeParts[2]) || 0;
+        }
+        
+        // Create a date string that will be interpreted as the user's local time
+        try {
+          const localFormatter = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false
+          });
+          
+          // Find what UTC time corresponds to the local time the user specified
+          // Start with an estimate and adjust
+          let testDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+          
+          // Get the local time at this UTC moment
+          const localParts = localFormatter.formatToParts(testDate);
+          const localHour = parseInt(localParts.find(p => p.type === 'hour')?.value || '0');
+          const localDay = parseInt(localParts.find(p => p.type === 'day')?.value || '1');
+          
+          // Calculate the offset in hours
+          let hourDiff = hours - localHour;
+          let dayDiff = day - localDay;
+          
+          // Adjust for day boundary crossings
+          if (dayDiff > 0) hourDiff += 24;
+          if (dayDiff < 0) hourDiff -= 24;
+          
+          // Apply the offset to get the correct UTC time
+          testDate = new Date(testDate.getTime() + hourDiff * 60 * 60 * 1000);
+          
+          console.log(`🕐 Timezone conversion: "${dateTimeStr}" in ${timezone} → UTC: ${testDate.toISOString()}`);
+          return testDate;
+        } catch (e) {
+          console.error("Error in timezone conversion, falling back:", e);
+          return new Date(dateTimeStr);
+        }
+      }
+      
       // AUTO-CREATE CALENDAR EVENTS for tasks/events with dates
+      // Check user preference first
+      const userDoc = await db.collection("users").doc(userId).get();
+      const userData = userDoc.exists ? userDoc.data() : {};
+      const autoAddToCalendar = userData?.autoAddTasksToCalendar || false;
+      
+      // Check for duplicates before creating to prevent race conditions
       let calendarEventsCreated = 0;
-      for (const task of newTasks) {
-        if (task.suggestedDate) {
+      let calendarEventsSkipped = 0;
+      
+      // Only auto-create calendar events if user preference is enabled
+      if (autoAddToCalendar) {
+        for (const task of newTasks) {
+          if (task.suggestedDate) {
           try {
-            const startDate = new Date(task.suggestedDate);
+            const startDate = parseLocalDateTime(task.suggestedDate, userTimezone);
             // Only create calendar events for valid future or today's dates
             if (!isNaN(startDate.getTime())) {
+              // Check for duplicate before creating
+              const isDuplicate = await checkDuplicateCalendarEvent(
+                db,
+                userId,
+                task.title,
+                startDate,
+                recordingId,
+                task.id
+              );
+              
+              if (isDuplicate) {
+                console.log(`⏭️ Skipping duplicate calendar event: ${task.title}`);
+                calendarEventsSkipped++;
+                continue;
+              }
+              
               const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // 1 hour default duration
               
               const eventId = `zeitline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -653,12 +922,18 @@ ${transcript}`;
               task.calendarEventId = eventId;
               calendarEventsCreated++;
               
-              console.log(`📅 Auto-created calendar event: ${task.title} for ${startDate.toISOString()}`);
+              console.log(`📅 Auto-created calendar event: ${task.title} for ${startDate.toISOString()} (user timezone: ${userTimezone})`);
             }
           } catch (err) {
             console.error(`Failed to create calendar event for task ${task.title}:`, err);
           }
         }
+      } else {
+        console.log(`⏭️ Skipping auto-calendar creation - user preference disabled`);
+      }
+      
+      if (calendarEventsSkipped > 0) {
+        console.log(`⏭️ Skipped ${calendarEventsSkipped} duplicate calendar events`);
       }
       
       batch.set(taskListRef, {
@@ -673,15 +948,29 @@ ${transcript}`;
         extractedTaskCount: userTasks.length,
         extractedPointCount: conversationPoints.length,
         calendarEventsCreated: calendarEventsCreated,
-        extractedAt: admin.firestore.FieldValue.serverTimestamp()
+        extractedAt: admin.firestore.FieldValue.serverTimestamp(),
+        extractionInProgress: false  // Clear the flag after extraction completes
       });
       
       await batch.commit();
       
       console.log(`✅ Auto-extracted ${userTasks.length} tasks, ${conversationPoints.length} points, and created ${calendarEventsCreated} calendar events for recording ${recordingId}`);
       
-    } catch (error) {
-      console.error("Error auto-extracting tasks:", error);
+    } catch (error: any) {
+      console.error("❌ Error auto-extracting tasks:", error);
+      console.error("Error stack:", error.stack);
+      
+      // Save error to document for debugging
+      try {
+        await snapshot.ref.update({
+          tasksExtracted: false,
+          extractionError: error.message || "Unknown error",
+          extractionErrorAt: admin.firestore.FieldValue.serverTimestamp(),
+          extractionInProgress: false  // Clear the flag on error too
+        });
+      } catch (updateError) {
+        console.error("Failed to save extraction error:", updateError);
+      }
     }
   });
 
@@ -693,11 +982,19 @@ export const onRecordingUpdate = functions.firestore
     const before = change.before.data();
     const after = change.after.data();
     
+    console.log(`🔄 === onRecordingUpdate triggered ===`);
+    console.log(`Recording ID: ${recordingId}`);
+    console.log(`User ID: ${userId}`);
+    console.log(`Before - audioUrl: ${!!before.audioUrl}, transcript: ${!!before.transcript && before.transcript?.trim?.()?.length > 0}, tasksExtracted: ${before.tasksExtracted}`);
+    console.log(`After - audioUrl: ${!!after.audioUrl}, transcript: ${!!after.transcript && after.transcript?.trim?.()?.length > 0}, tasksExtracted: ${after.tasksExtracted}`);
+    
     // Check if audioUrl was just added and there's no transcript yet
     const hadAudioUrl = before.audioUrl && before.audioUrl.trim().length > 0;
     const hasAudioUrl = after.audioUrl && after.audioUrl.trim().length > 0;
     const hadTranscript = before.transcript && before.transcript.trim().length > 0;
     let hasTranscript = after.transcript && after.transcript.trim().length > 0;
+    
+    console.log(`Conditions: hadAudioUrl=${hadAudioUrl}, hasAudioUrl=${hasAudioUrl}, hadTranscript=${hadTranscript}, hasTranscript=${hasTranscript}`);
     
     // If audioUrl was just added and no transcript, transcribe with Whisper
     if (!hadAudioUrl && hasAudioUrl && !hasTranscript && !after.isTranscribing) {
@@ -748,38 +1045,139 @@ export const onRecordingUpdate = functions.firestore
     }
     
     // Check if transcript was just added (either by Whisper above or iOS)
-    if (!hadTranscript && hasTranscript && !after.tasksExtracted) {
-      console.log(`Transcript added to recording ${recordingId}, triggering auto-extraction...`);
+    // Also check extractionInProgress to prevent race condition with onRecordingCreate
+    console.log(`Extraction check: !hadTranscript=${!hadTranscript}, hasTranscript=${hasTranscript}, !tasksExtracted=${!after.tasksExtracted}, extractionInProgress=${after.extractionInProgress}`);
+    
+    if (!hadTranscript && hasTranscript && !after.tasksExtracted && !after.extractionInProgress) {
+      console.log(`✅ Extraction conditions met! Triggering auto-extraction...`);
+      const transcript = after.transcript;
+      console.log(`📝 Transcript preview: "${transcript.substring(0, 200)}..."`);
       
       // Trigger the same extraction logic
-      // We'll call the onCreate handler logic by creating a fake snapshot
       const snapshot = change.after;
+      
+      // Set extraction lock FIRST to prevent race condition with onRecordingCreate
+      // Use a transaction to ensure atomicity
+      const db = admin.firestore();
+      try {
+        const lockAcquired = await db.runTransaction(async (transaction) => {
+          const docRef = snapshot.ref;
+          const doc = await transaction.get(docRef);
+          const currentData = doc.data();
+          
+          // Double-check conditions inside transaction
+          if (currentData?.extractionInProgress || currentData?.tasksExtracted) {
+            console.log("🔒 Another process already started extraction, skipping");
+            return false;
+          }
+          
+          transaction.update(docRef, {
+            extractionInProgress: true,
+            extractionStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return true;
+        });
+        
+        if (!lockAcquired) {
+          return;
+        }
+        console.log("🔒 Extraction lock acquired in onRecordingUpdate");
+      } catch (lockError) {
+        console.error("Failed to acquire extraction lock:", lockError);
+        return;
+      }
       
       try {
         const { OpenAI } = await import("openai");
         
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) {
-          console.error("OpenAI API key not configured");
+          console.error("❌ OpenAI API key not configured - cannot extract tasks");
+          await snapshot.ref.update({
+            tasksExtracted: false,
+            extractionError: "OpenAI API key not configured",
+            extractionInProgress: false,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
           return;
         }
         
         const openai = new OpenAI({ apiKey });
-        const transcript = after.transcript;
         
-        // Get current date for relative date parsing
-        const currentDate = new Date();
-        const currentDateStr = currentDate.toISOString().split('T')[0];
+        // Fetch user's timezone from their profile
+        // Note: db already initialized above for lock acquisition
+        let userTimezone = "America/New_York"; // Default fallback
+        
+        try {
+          const userDoc = await db.collection("users").doc(userId).get();
+          const userData = userDoc.data();
+          userTimezone = userData?.personal?.timezone || "America/New_York";
+          console.log(`📍 User timezone: ${userTimezone}`);
+        } catch (tzError) {
+          console.error("⚠️ Error fetching user timezone, using default:", tzError);
+        }
+        
+        // Get current date/time in user's timezone
+        const now = new Date();
+        let currentDateStr: string;
+        let currentTimeStr: string;
+        let tomorrowDateStr: string;
+        
+        try {
+          const dateOptions: Intl.DateTimeFormatOptions = {
+            timeZone: userTimezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          };
+          const timeOptions: Intl.DateTimeFormatOptions = {
+            timeZone: userTimezone,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+          };
+          
+          // Format current date as YYYY-MM-DD
+          const dateFormatter = new Intl.DateTimeFormat('en-CA', dateOptions);
+          currentDateStr = dateFormatter.format(now);
+          
+          // Format current time as HH:MM
+          const timeFormatter = new Intl.DateTimeFormat('en-GB', timeOptions);
+          currentTimeStr = timeFormatter.format(now);
+          
+          // Calculate tomorrow's date in user's timezone
+          const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          tomorrowDateStr = dateFormatter.format(tomorrow);
+        } catch (formatError) {
+          console.error("⚠️ Error formatting dates, using UTC fallback:", formatError);
+          currentDateStr = now.toISOString().split('T')[0];
+          currentTimeStr = now.toISOString().split('T')[1].substring(0, 5);
+          const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+          tomorrowDateStr = tomorrow.toISOString().split('T')[0];
+        }
+        
+        console.log(`📅 Date context: Today=${currentDateStr}, Time=${currentTimeStr}, Tomorrow=${tomorrowDateStr}`);
         
         const prompt = `You are an AI assistant that analyzes voice memo transcripts to extract actionable items.
 
-Today's date is: ${currentDateStr}
+CURRENT DATE/TIME CONTEXT (in user's local timezone: ${userTimezone}):
+- Today's date: ${currentDateStr}
+- Current time: ${currentTimeStr}
+- Tomorrow's date: ${tomorrowDateStr}
 
 CRITICAL RULES:
 1. ONLY extract items that are EXPLICITLY mentioned in the transcript
 2. NEVER create placeholder, example, sample, or test tasks
 3. If the transcript has no clear tasks or discussion points, return EMPTY arrays
 4. Do NOT invent or make up any content - only use what is actually said
+5. ANY mention of plans, events, appointments, or activities with a date/time MUST be extracted as a user_task
+
+DEDUPLICATION RULES (VERY IMPORTANT):
+6. NEVER create multiple user_tasks for the same event/meeting/appointment
+7. If someone says "put X on my calendar", "add X to calendar", "schedule X", or "I'll calendar X" - extract ONLY the event X as a single user_task, NOT a separate "add to calendar" task
+8. When the same event is mentioned multiple times or described in different ways, consolidate into ONE user_task
+9. Example: "I'll put on my calendar the meeting with Jake tomorrow at 4pm" = ONE task titled "Meeting with Jake", NOT two tasks
+10. The action of adding to calendar is automatic - never create a task for the action of calendaring itself
 
 This is a voice memo recorded by the user. Extract:
 1. Discussion points and topics that are ACTUALLY mentioned
@@ -795,23 +1193,34 @@ For conversation_points (ONLY if actually discussed):
 
 For user_tasks - extract if the user mentions ANY of these:
 - Something they need to do ("I need to X", "I have to X", "you need to do X")
-- Plans to attend or go somewhere ("I plan on X", "I'm going to X", "I have X scheduled", "going to X")
+- Plans to attend or go somewhere ("I plan on X", "I'm going to X", "I have X scheduled", "going to X", "attending X")
 - Events or appointments ("my meeting is at X", "birthday party at X", "appointment at X", "party at X")
 - Deadlines ("due by X", "deadline is X")
 - Social events ("seeing family", "dinner with X", "lunch with X")
+- IMPORTANT: If user mentions adding something to calendar, extract the EVENT being added, not the action of adding
 
 Fields for user_tasks:
 - title: Clear, actionable task/event title from the transcript
 - details: Additional context from the transcript
 - location: Where it takes place (if mentioned)
 - participants: People involved or mentioned (e.g., "family", specific names)
-- suggestedDateTime: ISO date string with time if mentioned (e.g., "tomorrow at 4pm" -> calculate from today's date ${currentDateStr}), null otherwise
+- suggestedDateTime: MUST be a complete ISO 8601 datetime string. Use 24-hour time format.
+  DATE/TIME CONVERSION EXAMPLES (based on current context):
+  - "tomorrow at 4pm" = "${tomorrowDateStr}T16:00:00"
+  - "tomorrow at 4 p.m." = "${tomorrowDateStr}T16:00:00"
+  - "today at 3pm" = "${currentDateStr}T15:00:00"
+  - "tonight at 8" = "${currentDateStr}T20:00:00"
+  - "this evening" = "${currentDateStr}T18:00:00"
+  - "tomorrow morning" = "${tomorrowDateStr}T09:00:00"
+  - If only date mentioned, default to 09:00:00
+  - Return null if no date/time is mentioned
 - priority: 1 (high), 2 (medium), 3 (low) based on urgency
 - category: work, personal, meeting, call, errand, health, event, appointment, social, other
 - isEvent: true if this is an event/appointment/social gathering to attend, false if it's a task to complete
 
-IMPORTANT: If the transcript is empty, unclear, just noise, or contains no actionable content, return:
-{"conversation_points": [], "user_tasks": []}
+IMPORTANT: 
+- If the transcript is empty, unclear, just noise, or contains no actionable content, return empty arrays
+- ALWAYS extract plans/events with dates as user_tasks, not just conversation_points
 
 Return ONLY valid JSON:
 {
@@ -834,12 +1243,24 @@ ${transcript}`;
         });
 
         const content = completion.choices[0].message.content || "{}";
+        console.log(`📦 Raw OpenAI response: ${content.substring(0, 500)}...`);
+        
         const parsed = JSON.parse(content);
         
         const conversationPoints = parsed.conversation_points || [];
         const userTasks = parsed.user_tasks || [];
         
-        const db = admin.firestore();
+        console.log(`✅ Extracted ${conversationPoints.length} conversation points and ${userTasks.length} user tasks`);
+        
+        // Log each extracted task for debugging
+        if (userTasks.length > 0) {
+          userTasks.forEach((task: any, idx: number) => {
+            console.log(`📋 Task ${idx + 1}: "${task.title}" | DateTime: ${task.suggestedDateTime} | Category: ${task.category} | isEvent: ${task.isEvent}`);
+          });
+        } else {
+          console.log(`⚠️ No user_tasks extracted from transcript. Conversation points:`, JSON.stringify(conversationPoints.slice(0, 3)));
+        }
+        
         const batch = db.batch();
         
         // Save conversation points
@@ -877,9 +1298,12 @@ ${transcript}`;
           participants: task.participants || [],
           subtasks: [],
           suggestedDate: task.suggestedDateTime || null,
+          suggestedEndDate: null, // Required by iOS model
+          isAllDay: task.isAllDay || false, // Required by iOS model
           priority: task.priority || null,
           category: task.category || "other",
-          isEvent: task.isEvent || false,
+          audioTimecode: 0,
+          transcriptSection: null, // Required by iOS model
           sessionId: recordingId,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -888,14 +1312,97 @@ ${transcript}`;
           status: "pending"
         }));
         
+        // Helper function to parse datetime string in user's timezone
+        function parseLocalDateTime(dateTimeStr: string, timezone: string): Date {
+          // If the string already has timezone info, parse directly
+          if (dateTimeStr.includes('Z') || dateTimeStr.includes('+') || (dateTimeStr.length > 10 && dateTimeStr.lastIndexOf('-') > 10)) {
+            return new Date(dateTimeStr);
+          }
+          
+          // Parse the datetime components
+          const [datePart, timePart] = dateTimeStr.split('T');
+          if (!datePart) return new Date(dateTimeStr);
+          
+          const [year, month, day] = datePart.split('-').map(Number);
+          let hours = 9, minutes = 0, seconds = 0; // Default to 9 AM
+          
+          if (timePart) {
+            const timeParts = timePart.split(':');
+            hours = parseInt(timeParts[0]) || 9;
+            minutes = parseInt(timeParts[1]) || 0;
+            seconds = parseInt(timeParts[2]) || 0;
+          }
+          
+          // Create a date string that will be interpreted as the user's local time
+          try {
+            const localFormatter = new Intl.DateTimeFormat('en-US', {
+              timeZone: timezone,
+              year: 'numeric', month: '2-digit', day: '2-digit',
+              hour: '2-digit', minute: '2-digit', second: '2-digit',
+              hour12: false
+            });
+            
+            // Find what UTC time corresponds to the local time the user specified
+            let testDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+            
+            // Get the local time at this UTC moment
+            const localParts = localFormatter.formatToParts(testDate);
+            const localHour = parseInt(localParts.find(p => p.type === 'hour')?.value || '0');
+            const localDay = parseInt(localParts.find(p => p.type === 'day')?.value || '1');
+            
+            // Calculate the offset in hours
+            let hourDiff = hours - localHour;
+            let dayDiff = day - localDay;
+            
+            // Adjust for day boundary crossings
+            if (dayDiff > 0) hourDiff += 24;
+            if (dayDiff < 0) hourDiff -= 24;
+            
+            // Apply the offset to get the correct UTC time
+            testDate = new Date(testDate.getTime() + hourDiff * 60 * 60 * 1000);
+            
+            console.log(`🕐 Timezone conversion: "${dateTimeStr}" in ${timezone} → UTC: ${testDate.toISOString()}`);
+            return testDate;
+          } catch (e) {
+            console.error("Error in timezone conversion, falling back:", e);
+            return new Date(dateTimeStr);
+          }
+        }
+        
         // AUTO-CREATE CALENDAR EVENTS for tasks/events with dates
+        // Check user preference first
+        const userDoc = await db.collection("users").doc(userId).get();
+        const userData = userDoc.exists ? userDoc.data() : {};
+        const autoAddToCalendar = userData?.autoAddTasksToCalendar || false;
+        
+        // Check for duplicates before creating to prevent race conditions
         let calendarEventsCreated = 0;
-        for (const task of newTasks) {
-          if (task.suggestedDate) {
+        let calendarEventsSkipped = 0;
+        
+        // Only auto-create calendar events if user preference is enabled
+        if (autoAddToCalendar) {
+          for (const task of newTasks) {
+            if (task.suggestedDate) {
             try {
-              const startDate = new Date(task.suggestedDate);
+              const startDate = parseLocalDateTime(task.suggestedDate, userTimezone);
               // Only create calendar events for valid future or today's dates
               if (!isNaN(startDate.getTime())) {
+                // Check for duplicate before creating
+                const isDuplicate = await checkDuplicateCalendarEvent(
+                  db,
+                  userId,
+                  task.title,
+                  startDate,
+                  recordingId,
+                  task.id
+                );
+                
+                if (isDuplicate) {
+                  console.log(`⏭️ Skipping duplicate calendar event: ${task.title}`);
+                  calendarEventsSkipped++;
+                  continue;
+                }
+                
                 const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // 1 hour default duration
                 
                 const eventId = `zeitline_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -926,12 +1433,18 @@ ${transcript}`;
                 task.calendarEventId = eventId;
                 calendarEventsCreated++;
                 
-                console.log(`📅 Auto-created calendar event: ${task.title} for ${startDate.toISOString()}`);
+                console.log(`📅 Auto-created calendar event: ${task.title} for ${startDate.toISOString()} (user timezone: ${userTimezone})`);
               }
             } catch (err) {
               console.error(`Failed to create calendar event for task ${task.title}:`, err);
             }
           }
+        } else {
+          console.log(`⏭️ Skipping auto-calendar creation - user preference disabled`);
+        }
+        
+        if (calendarEventsSkipped > 0) {
+          console.log(`⏭️ Skipped ${calendarEventsSkipped} duplicate calendar events`);
         }
         
         batch.set(taskListRef, {
@@ -946,16 +1459,36 @@ ${transcript}`;
           extractedTaskCount: userTasks.length,
           extractedPointCount: conversationPoints.length,
           calendarEventsCreated: calendarEventsCreated,
-          extractedAt: admin.firestore.FieldValue.serverTimestamp()
+          extractedAt: admin.firestore.FieldValue.serverTimestamp(),
+          extractionInProgress: false  // Clear the flag after extraction completes
         });
         
         await batch.commit();
         
         console.log(`✅ Auto-extracted ${userTasks.length} tasks, ${conversationPoints.length} points, and created ${calendarEventsCreated} calendar events from updated recording ${recordingId}`);
         
-      } catch (error) {
-        console.error("Error auto-extracting tasks on update:", error);
+      } catch (error: any) {
+        console.error("❌ Error auto-extracting tasks on update:", error);
+        console.error("Error stack:", error.stack);
+        
+        // Save error to document for debugging
+        try {
+          await snapshot.ref.update({
+            tasksExtracted: false,
+            extractionError: error.message || "Unknown error",
+            extractionErrorAt: admin.firestore.FieldValue.serverTimestamp(),
+            extractionInProgress: false  // Clear the flag on error too
+          });
+        } catch (updateError) {
+          console.error("Failed to save extraction error:", updateError);
+        }
       }
+    } else {
+      console.log(`⏭️ Skipping extraction - conditions not met:`);
+      if (hadTranscript) console.log(`  - Already had transcript before this update`);
+      if (!hasTranscript) console.log(`  - No transcript available`);
+      if (after.tasksExtracted) console.log(`  - Tasks already extracted`);
+      if (after.extractionInProgress) console.log(`  - Extraction already in progress by onRecordingCreate`);
     }
   });
 

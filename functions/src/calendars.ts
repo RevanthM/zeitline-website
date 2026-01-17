@@ -963,7 +963,74 @@ router.get("/events/:eventId", verifyAuth, async (req: Request, res: Response) =
     const uid = req.user!.uid;
     const { eventId } = req.params;
 
-    // Find which calendar this event belongs to
+    console.log(`Getting event ${eventId} for user ${uid}`);
+
+    // First, check if this is a Zeitline event (stored in calendar_events collection)
+    // Zeitline events have IDs starting with "zeitline_" or are stored in calendar_events with calendarType: "zeitline"
+    if (eventId.startsWith("zeitline_")) {
+      const zeitlineEventDoc = await db
+        .collection("users")
+        .doc(uid)
+        .collection("calendar_events")
+        .doc(eventId)
+        .get();
+
+      if (zeitlineEventDoc.exists) {
+        const event = zeitlineEventDoc.data()!;
+        console.log(`Found Zeitline event: ${event.title}`);
+        return res.json({
+          success: true,
+          data: {
+            id: eventId,
+            title: event.title || "No title",
+            description: event.description || "",
+            start: event.start,
+            end: event.end,
+            calendarType: "zeitline",
+            calendarId: "zeitline",
+            calendarName: event.calendarName || "Zeitline",
+            location: event.location || "",
+            source: event.source || "",
+            taskId: event.taskId || null,
+            recurring: event.recurring || null,
+          },
+        } as ApiResponse);
+      }
+    }
+
+    // Also try to find by document ID in calendar_events (for non-prefixed IDs)
+    const calendarEventDoc = await db
+      .collection("users")
+      .doc(uid)
+      .collection("calendar_events")
+      .doc(eventId)
+      .get();
+
+    if (calendarEventDoc.exists) {
+      const event = calendarEventDoc.data()!;
+      if (event.calendarType === "zeitline") {
+        console.log(`Found Zeitline event by direct ID: ${event.title}`);
+        return res.json({
+          success: true,
+          data: {
+            id: eventId,
+            title: event.title || "No title",
+            description: event.description || "",
+            start: event.start,
+            end: event.end,
+            calendarType: "zeitline",
+            calendarId: "zeitline",
+            calendarName: event.calendarName || "Zeitline",
+            location: event.location || "",
+            source: event.source || "",
+            taskId: event.taskId || null,
+            recurring: event.recurring || null,
+          },
+        } as ApiResponse);
+      }
+    }
+
+    // Find which calendar this event belongs to (external calendars)
     const calendarsRef = db.collection("users").doc(uid).collection("calendars");
     const snapshot = await calendarsRef.get();
 
@@ -2303,6 +2370,170 @@ router.post("/events", verifyAuth, async (req: Request, res: Response) => {
       success: false,
       error: error.message || "Failed to create event"
     });
+  }
+});
+
+/**
+ * PUT /calendars/events/:eventId
+ * Update a Zeitline calendar event
+ */
+router.put("/events/:eventId", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const { eventId } = req.params;
+    const { title, description, start, end, location } = req.body;
+
+    console.log(`Updating event ${eventId} for user ${uid}`);
+
+    // Check if the event exists and is a Zeitline event
+    const eventRef = db.collection("users").doc(uid).collection("calendar_events").doc(eventId);
+    const eventDoc = await eventRef.get();
+
+    if (!eventDoc.exists) {
+      console.log(`Event ${eventId} not found`);
+      res.status(404).json({
+        success: false,
+        error: "Event not found",
+      } as ApiResponse);
+      return;
+    }
+
+    const existingEvent = eventDoc.data()!;
+    
+    // Only allow editing Zeitline events
+    if (existingEvent.calendarType !== "zeitline") {
+      console.log(`Event ${eventId} is not a Zeitline event (type: ${existingEvent.calendarType})`);
+      res.status(403).json({
+        success: false,
+        error: "Cannot edit events from external calendars. Please edit them in the original calendar app.",
+      } as ApiResponse);
+      return;
+    }
+
+    // Build update object with only provided fields
+    const updateData: any = {
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (start !== undefined) updateData.start = start;
+    if (end !== undefined) updateData.end = end;
+    if (location !== undefined) updateData.location = location;
+
+    // Update the event
+    await eventRef.update(updateData);
+
+    // Get the updated event
+    const updatedEventDoc = await eventRef.get();
+    const updatedEvent = updatedEventDoc.data()!;
+
+    console.log(`✅ Updated calendar event: ${updatedEvent.title} for user ${uid}`);
+
+    res.json({
+      success: true,
+      data: {
+        event: {
+          id: eventId,
+          ...updatedEvent,
+        },
+      },
+    } as ApiResponse);
+
+  } catch (error: any) {
+    console.error("Error updating calendar event:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to update event",
+    } as ApiResponse);
+  }
+});
+
+/**
+ * DELETE /calendars/events/:eventId
+ * Delete a Zeitline calendar event
+ */
+router.delete("/events/:eventId", verifyAuth, async (req: Request, res: Response) => {
+  try {
+    const uid = req.user!.uid;
+    const { eventId } = req.params;
+
+    console.log(`Deleting event ${eventId} for user ${uid}`);
+
+    // Check if the event exists
+    const eventRef = db.collection("users").doc(uid).collection("calendar_events").doc(eventId);
+    const eventDoc = await eventRef.get();
+
+    if (!eventDoc.exists) {
+      console.log(`Event ${eventId} not found`);
+      res.status(404).json({
+        success: false,
+        error: "Event not found",
+      } as ApiResponse);
+      return;
+    }
+
+    const existingEvent = eventDoc.data()!;
+    
+    // Only allow deleting Zeitline events
+    if (existingEvent.calendarType !== "zeitline") {
+      console.log(`Event ${eventId} is not a Zeitline event (type: ${existingEvent.calendarType})`);
+      res.status(403).json({
+        success: false,
+        error: "Cannot delete events from external calendars. Please delete them in the original calendar app.",
+      } as ApiResponse);
+      return;
+    }
+
+    const eventTitle = existingEvent.title;
+    const taskId = existingEvent.taskId;
+
+    // Delete the event
+    await eventRef.delete();
+
+    // If this event was linked to a task, update the task
+    if (taskId) {
+      try {
+        const taskListRef = db.collection("users").doc(uid).collection("taskLists").doc("master");
+        const taskListDoc = await taskListRef.get();
+        
+        if (taskListDoc.exists) {
+          const tasks = taskListDoc.data()?.tasks || [];
+          const updatedTasks = tasks.map((t: any) => {
+            if (t.id === taskId) {
+              return {
+                ...t,
+                addedToCalendar: false,
+                calendarEventId: null,
+              };
+            }
+            return t;
+          });
+          await taskListRef.update({ tasks: updatedTasks });
+          console.log(`Updated task ${taskId} to remove calendar link`);
+        }
+      } catch (taskError) {
+        console.error("Error updating task after event deletion:", taskError);
+        // Don't fail the delete operation if task update fails
+      }
+    }
+
+    console.log(`✅ Deleted calendar event: ${eventTitle} for user ${uid}`);
+
+    res.json({
+      success: true,
+      data: {
+        message: "Event deleted successfully",
+        eventId: eventId,
+      },
+    } as ApiResponse);
+
+  } catch (error: any) {
+    console.error("Error deleting calendar event:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message || "Failed to delete event",
+    } as ApiResponse);
   }
 });
 
