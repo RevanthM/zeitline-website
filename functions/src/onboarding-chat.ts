@@ -5,10 +5,19 @@ import OpenAI from "openai";
 
 const router: Router = express.Router();
 
-// Initialize OpenAI
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenAI lazily to avoid errors during deployment
+let openai: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!openai) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error("OPENAI_API_KEY environment variable is not set");
+    }
+    openai = new OpenAI({ apiKey });
+  }
+  return openai;
+}
 
 // System prompt for the onboarding AI
 const SYSTEM_PROMPT = `You are Zara, the friendly and empathetic AI assistant for Zeitline - a personal life management app. You're conducting an onboarding conversation to learn about the user so you can automatically fill out their calendar and personalize their experience.
@@ -180,7 +189,7 @@ router.post("/chat", verifyAuth, async (req: Request, res: Response): Promise<vo
     ];
 
     // Call OpenAI
-    const completion = await openai.chat.completions.create({
+    const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o",
       messages,
       temperature: 0.8,
